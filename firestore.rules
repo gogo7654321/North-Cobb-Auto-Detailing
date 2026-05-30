@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global safety net (Default Close policy)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Functions ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner() {
+      return isSignedIn() &&
+             request.auth.token.email_verified == true &&
+             (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['name', 'phone', 'email', 'service', 'price', 'dateTime', 'status', 'createdAt']) &&
+             data.size() >= 8 && data.size() <= 10 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
+             data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 32 &&
+             data.email is string && data.email.size() <= 256 && data.email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$') &&
+             data.service is string && data.service.size() <= 64 && data.service in ['Exterior Detail', 'Interior Detail', 'Full Detail'] &&
+             data.price is number && (
+               (data.service == 'Exterior Detail' && data.price == 45) ||
+               (data.service == 'Interior Detail' && data.price == 65) ||
+               (data.service == 'Full Detail' && data.price == 100)
+             ) &&
+             data.dateTime is string && data.dateTime.size() <= 64 &&
+             timestamp(data.dateTime + 'Z') >= request.time &&
+             timestamp(data.dateTime + 'Z').hour() >= 9 &&
+             timestamp(data.dateTime + 'Z').hour() < 18 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 2048)) &&
+             (!('vehicleType' in data) || (data.vehicleType is string && data.vehicleType.size() <= 128)) &&
+             (data.size() == 8 ||
+              (data.size() == 9 && ('notes' in data || 'vehicleType' in data)) ||
+              (data.size() == 10 && 'notes' in data && 'vehicleType' in data)) &&
+             data.status is string && data.status.size() <= 32 && data.status in ['pending', 'confirmed', 'cancelled'] &&
+             data.createdAt is string && data.createdAt.size() <= 64 &&
+             timestamp(data.createdAt) <= request.time + duration.value(5, 'm') &&
+             timestamp(data.createdAt) >= request.time - duration.value(5, 'm');
+    }
+
+    // --- Bookings Collection Rules ---
+    match /bookings/{bookingId} {
+      allow get, list: if isVerifiedOwner();
+      allow delete: if isVerifiedOwner() && isValidId(bookingId);
+
+      allow create: if isValidId(bookingId) &&
+                       isValidBooking(incoming()) &&
+                       incoming().status == 'pending';
+
+      allow update: if isVerifiedOwner() &&
+                       isValidId(bookingId) &&
+                       isValidBooking(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+    }
+
+    // --- Admin Config Collection Rules ---
+    match /admin_config/{docId} {
+      allow read, write: if isVerifiedOwner() && isValidId(docId);
+    }
+  }
+}

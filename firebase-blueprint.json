@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "Booking": {
+      "title": "Booking",
+      "description": "A detailing service reservation.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Customer name" },
+        "phone": { "type": "string", "description": "Customer phone number" },
+        "email": { "type": "string", "description": "Customer email" },
+        "service": { "type": "string", "description": "Selected service (Exterior, Interior, Full)" },
+        "price": { "type": "number", "description": "Service price" },
+        "dateTime": { "type": "string", "format": "date-time", "description": "Booking slot date and time" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"], "description": "Booking status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "notes": { "type": "string", "description": "Optional notes or extra requests from physical customers" },
+        "vehicleType": { "type": "string", "description": "Selected vehicle type (e.g. Sedan, SUV, Truck)" }
+      },
+      "required": ["name", "phone", "email", "service", "price", "dateTime", "status", "createdAt"]
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Credentials and OAuth access tokens.",
+      "type": "object",
+      "properties": {
+        "accessToken": { "type": "string", "description": "Google OAuth Access Token for APIs" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last token update time" },
+        "email": { "type": "string", "description": "Owner email" }
+      },
+      "required": ["accessToken", "updatedAt", "email"]
+    }
+  },
+  "firestore": {
+    "bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Reservations for vehicle detailing services."
+    },
+    "admin_config/{docId}": {
+      "schema": "AdminConfig",
+      "description": "Dynamic configurations and private tokens for backend dispatchers."
+    }
+  }
+}
