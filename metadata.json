@@ -1,1 +1,8 @@
-{"name":"North Cobb Detailing","description":"Premium mobile car detailing website with real-time automatic booking, pricing breakdown, and Google Calendar scheduling.","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}
+{
+  "name": "North Cobb Detailing",
+  "description": "Premium mobile car detailing website with real-time automatic booking, pricing breakdown, and Google Calendar scheduling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
