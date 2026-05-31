@@ -51,11 +51,18 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   const [emailTouched, setEmailTouched] = useState(false);
   const [dateTouched, setDateTouched] = useState(false);
 
+  // Restrict date selection to at least tomorrow (24 hours lead time)
+  const getMinDateString = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split("T")[0]; // YYYY-MM-DD
+  };
+
   // Real-time validations
   const isNameValid = name.trim().length >= 2;
   const isPhoneValid = phone.trim().replace(/\D/g, "").length >= 10;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const isDateValid = date !== "";
+  const isDateValid = date !== "" && date >= getMinDateString();
 
   // Set initial service if passed from pricing cards
   useEffect(() => {
@@ -63,13 +70,6 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       setService(initialService as BookingServiceType);
     }
   }, [initialService]);
-
-  // Restrict date selection to at least tomorrow
-  const getMinDateString = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split("T")[0]; // YYYY-MM-DD
-  };
 
   // Get service price mapping to display and write
   const getPrice = (type: BookingServiceType) => {
@@ -128,7 +128,11 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       return;
     }
     if (!isDateValid) {
-      setErrorMsg("Please select a preferred date.");
+      if (date === "") {
+        setErrorMsg("Please select a preferred date.");
+      } else {
+        setErrorMsg(`Bookings must be scheduled at least 24 hours in advance. Please select tomorrow (${getMinDateString()}) or a later date.`);
+      }
       setLoading(false);
       return;
     }
@@ -544,7 +548,11 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                       <p className={`text-[10px] font-mono font-bold flex items-center gap-1 mt-1 uppercase ${
                         isDateValid ? "text-emerald-700" : "text-rose-500"
                       }`}>
-                        {isDateValid ? "✓ Date selected" : "⚠ Pick a preferred slot"}
+                        {isDateValid 
+                          ? "✓ Date selected" 
+                          : date === "" 
+                            ? "⚠ Pick a preferred slot" 
+                            : "⚠ Must be tomorrow or later"}
                       </p>
                     </motion.div>
                   )}

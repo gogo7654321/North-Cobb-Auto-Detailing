@@ -143,7 +143,7 @@ export default function App() {
                 borderRadius: "6px 2px 6px 2px"
               }}
             >
-              Request Spot
+              Request Detail
             </button>
           </nav>
 
@@ -196,7 +196,7 @@ export default function App() {
                 selectedTab === "book" ? "bg-[#b45309] text-white font-extrabold" : "text-zinc-650 border border-dashed border-[#e6dccf]"
               }`}
             >
-              Request Spot
+              Request Detail
             </button>
           </div>
         )}
@@ -510,7 +510,7 @@ export default function App() {
               <span>•</span>
               <button onClick={() => { setSelectedTab("services"); window.location.hash = "#services"; }} className="hover:text-amber-800 transition-colors cursor-pointer">Our Services</button>
               <span>•</span>
-              <button onClick={() => { setSelectedTab("book"); window.location.hash = "#book"; }} className="hover:text-amber-800 transition-colors cursor-pointer">Request spot</button>
+              <button onClick={() => { setSelectedTab("book"); window.location.hash = "#book"; }} className="hover:text-amber-800 transition-colors cursor-pointer">Request Detail</button>
               <span>•</span>
               <a 
                 href="https://www.facebook.com/people/North-Cobb-Detailing/pfbid02hkyF1tuWGoGWDAVMadwH6xTU6RRLdENWVMiLiqQqpBsDzhbiS7h363i8QmHEyd3el/" 
@@ -554,7 +554,7 @@ export default function App() {
             style={{ borderRadius: "10px 2px 10px 2px" }}
           >
             <Sparkles className="w-4 h-4 text-white" />
-            Request Spot
+            Request Detail
           </button>
         </div>
       )}
