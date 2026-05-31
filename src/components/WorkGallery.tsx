@@ -1,6 +1,3 @@
-import { useState } from "react";
-import { Sparkles, Eye, X, Check, ArrowRight } from "lucide-react";
-
 interface GalleryItem {
   id: string;
   src: string;
@@ -12,8 +9,6 @@ interface GalleryItem {
 }
 
 export default function WorkGallery() {
-  const [activeItem, setActiveItem] = useState<GalleryItem | null>(null);
-
   const galleryItems: GalleryItem[] = [
     {
       id: "exterior_impala_front",
@@ -115,17 +110,16 @@ export default function WorkGallery() {
         </p>
       </div>
 
-      {/* Interactive Bento Styling grid */}
+      {/* Clean Bento Styling grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {galleryItems.map((item) => (
           <div
             key={item.id}
-            onClick={() => setActiveItem(item)}
-            className="group bg-white border-2 border-[#e6dccf] overflow-hidden cursor-pointer hover:border-[#b45309] hover:shadow-md transition-all duration-300 flex flex-col"
+            className="group bg-white border-2 border-[#e6dccf] overflow-hidden flex flex-col"
             style={{ borderRadius: "20px 2px 20px 2px" }}
           >
             {/* Image container frame */}
-            <div className="relative aspect-square w-full bg-[#faf5f0] overflow-hidden border-b-2 border-[#e6dccf] group-hover:border-[#b45309]/30 transition-all">
+            <div className="relative aspect-square w-full bg-[#faf5f0] overflow-hidden border-b-2 border-[#e6dccf] transition-all">
               <img
                 src={item.src}
                 alt={item.title}
@@ -133,15 +127,6 @@ export default function WorkGallery() {
                 loading="lazy"
                 referrerPolicy="no-referrer"
               />
-              {/* Overlay with subtle instruction hint */}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-                <div className="bg-white/95 text-[#2e261f] text-xs font-black tracking-wider uppercase px-4 py-2 border border-amber-600 flex items-center gap-2"
-                  style={{ borderRadius: "6px 2.5px 6px 2.5px" }}
-                >
-                  <Eye className="w-3.5 h-3.5 text-amber-700" />
-                  Inspect Finish Details
-                </div>
-              </div>
 
               {/* Tag Overlays */}
               <div className="absolute top-3 left-3 bg-[#fffdfb] border border-[#e6dccf] text-[#b45309] font-mono text-[9px] font-bold px-2 py-0.5 uppercase tracking-wider rounded">
@@ -155,96 +140,17 @@ export default function WorkGallery() {
                 <span className="text-[10px] text-amber-800 font-mono font-bold tracking-tight uppercase">
                   {item.vehicle}
                 </span>
-                <h4 className="text-base font-serif font-black text-[#2e261f] leading-tight group-hover:text-[#b45309] transition-colors">
+                <h4 className="text-base font-serif font-black text-[#2e261f] leading-tight">
                   {item.title}
                 </h4>
-                <p className="text-xs text-[#5c544a] leading-relaxed line-clamp-2">
+                <p className="text-xs text-[#5c544a] leading-relaxed">
                   {item.description}
                 </p>
-              </div>
-
-              <div className="pt-3.5 border-t border-dashed border-[#e1d3c1] flex items-center justify-between text-[11px] font-mono font-bold text-zinc-500">
-                <span>Arthur & Carson Crew</span>
-                <span className="text-[#b45309] group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                  View Details <ArrowRight className="w-3 h-3" />
-                </span>
               </div>
             </div>
           </div>
         ))}
       </div>
-
-      {/* Expanded Details Lightbox Modal */}
-      {activeItem && (
-        <div 
-          onClick={() => setActiveItem(null)}
-          className="fixed inset-0 z-50 bg-[#251f1a]/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 cursor-zoom-out animate-in fade-in duration-200"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-[#fffdfb] max-w-3xl w-full border-4 border-[#2e261f] shadow-2xl relative cursor-default flex flex-col md:flex-row md:items-stretch max-h-[90vh] overflow-y-auto md:overflow-y-visible"
-            style={{ borderRadius: "32px 4px 32px 4px" }}
-          >
-            {/* Close Button badge */}
-            <button
-              onClick={() => setActiveItem(null)}
-              className="absolute top-3 right-3 z-10 w-9 h-9 bg-[#2e261f] text-white flex items-center justify-center border-2 border-white hover:bg-neutral-900 transition-colors cursor-pointer"
-              style={{ borderRadius: "10px 2px 10px 2px" }}
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Left Column: Huge High-Quality Image Preview */}
-            <div className="relative flex-1 bg-neutral-950 flex items-center justify-center min-h-[200px] md:min-h-full border-b-2 md:border-b-0 md:border-r-2 border-[#2e261f]">
-              <img
-                src={activeItem.src}
-                alt={activeItem.title}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute bottom-4 left-4 bg-black/75 text-white font-mono text-[9px] px-3 py-1 rounded border border-neutral-700 tracking-widest uppercase">
-                Original Driveway Finish
-              </div>
-            </div>
-
-            {/* Right Column: Detailed technical facts / checklists */}
-            <div className="p-5 sm:p-8 flex-1 flex flex-col justify-between space-y-6 text-left max-w-none md:max-w-sm">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <span className="bg-amber-100 text-[#b45309] font-mono font-bold text-[10px] px-2.5 py-0.5 border border-amber-300 uppercase tracking-wider rounded">
-                    {activeItem.category} Service
-                  </span>
-                  <div className="text-[11px] font-mono text-zinc-500 font-bold mt-1 uppercase">
-                    Vehicle: {activeItem.vehicle}
-                  </div>
-                  <h4 className="text-xl font-serif font-black text-[#2e261f] mt-1.5 leading-tight">
-                    {activeItem.title}
-                  </h4>
-                </div>
-
-                <p className="text-xs sm:text-sm text-[#5c544a] leading-relaxed font-medium">
-                  {activeItem.description}
-                </p>
-
-                {/* Specific restoration checkpoints checklist */}
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#b45309] block">
-                    Completed Checkpoints
-                  </span>
-                  <ul className="space-y-1.5">
-                    {activeItem.highlights.map((highlight, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-xs text-[#2e261f]">
-                        <Check className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
-                        <span className="leading-relaxed font-semibold">{highlight}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

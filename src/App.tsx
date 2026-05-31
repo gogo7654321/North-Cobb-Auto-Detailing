@@ -322,11 +322,6 @@ export default function App() {
                 </div>
               </div>
             </section>
-            {/* REAL PORTFOLIO WORK SHOWCASE GALLERY */}
-            <section className="py-6 border-b border-[#e6dccf]">
-              <WorkGallery />
-            </section>
-
             {/* PACKAGES PREVIEW SECTION */}
             <section className="space-y-8">
               <div className="text-center max-w-xl mx-auto">
@@ -337,6 +332,11 @@ export default function App() {
                 <p className="text-zinc-650 text-xs sm:text-sm mt-1">Select from our transparent pricing structures below. Estimates vary based on vehicle size and dirtiness with zero hidden surprise extras.</p>
               </div>
               <ServicesDetail onSelectService={scrollToBookingAndSelect} />
+            </section>
+
+            {/* REAL PORTFOLIO WORK SHOWCASE GALLERY */}
+            <section className="py-6 border-b border-[#e6dccf]">
+              <WorkGallery />
             </section>
 
             {/* HIGH-CONVERSION TESTIMONIALS SECTION (Vintage Journal Style Columns) */}
@@ -480,18 +480,27 @@ export default function App() {
 
       {/* COMPACT FOOTER */}
       <footer className="border-t border-[#e6dccf] bg-[#faf5f0] text-[#5c544a] mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col md:flex-row items-center justify-between gap-6 text-xs">
-          <div className="text-center md:text-left space-y-2">
-            <p className="font-serif font-black text-sm tracking-wide text-[#2e261f]">
-              NORTH COBB MOBILE AUTO DETAIL
-            </p>
-            <p className="font-mono text-[10px] text-zinc-500">© {new Date().getFullYear()} North Cobb Detailing. All Rights Reserved.</p>
-            <p className="text-[10px] font-mono text-zinc-450 mt-1">
-              Website designed & crafted by <span className="text-amber-900 font-bold border-b border-amber-900/20 hover:border-amber-900/50 transition-all font-sans">Neil Mendpara</span>
-            </p>
-            <p className="text-[11px] leading-relaxed max-w-sm text-zinc-500">
-              Top-rated professional parent & pet friendly local microdetailing across Kennesaw, Acworth, Marietta, and Cobb County, Georgia.
-            </p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col md:flex-row items-center justify-between gap-8 text-xs">
+          <div className="flex flex-col md:flex-row items-center md:items-start gap-4 text-center md:text-left">
+            <img 
+              src="https://north-cobb-detailing-139121508979.us-west1.run.app/North_CObb_Detailing.PNG" 
+              alt="North Cobb Detailing Logo" 
+              className="w-14 h-14 shrink-0 object-contain bg-white border border-[#e6dccf] shadow-sm transform hover:scale-105 transition-transform duration-200" 
+              style={{ borderRadius: "12px 3px 12px 3px" }}
+              referrerPolicy="no-referrer"
+            />
+            <div className="space-y-1">
+              <p className="font-serif font-black text-sm tracking-wide text-[#2e261f]">
+                NORTH COBB MOBILE AUTO DETAIL
+              </p>
+              <p className="font-mono text-[10px] text-zinc-500">© {new Date().getFullYear()} North Cobb Detailing. All Rights Reserved.</p>
+              <p className="text-[10px] font-mono text-zinc-450">
+                Website designed & crafted by <span className="text-amber-900 font-bold border-b border-amber-900/20 hover:border-amber-900/50 transition-all font-sans">Neil Mendpara</span>
+              </p>
+              <p className="text-[11px] leading-relaxed max-w-sm text-zinc-500 pt-1">
+                Top-rated professional parent & pet friendly local microdetailing across Kennesaw, Acworth, Marietta, and Cobb County, Georgia.
+              </p>
+            </div>
           </div>
           
           {/* Facebook Link & Navigation */}

@@ -238,7 +238,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   };
 
   const getInputClassName = (isValid: boolean, touched: boolean) => {
-    const base = "w-full bg-[#fdfbf8] border-2 rounded-xl px-4 py-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all duration-200";
+    const base = "w-full bg-[#fdfbf8] border-2 rounded-xl px-4 py-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all duration-200 min-h-[48px]";
     if (!touched) return `${base} border-[#e6dccf] focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20`;
     return isValid
       ? `${base} border-emerald-600 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/10 bg-emerald-50/5`
@@ -513,7 +513,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
             </div>
 
             {/* Date & Time Grid */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5 text-left">
                 <label className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
                   <CalendarIcon className="w-3.5 h-3.5 text-[#b45309]" />
@@ -560,7 +560,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                   id="booking_input_time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  className="w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-2 py-2.5 sm:px-4 text-xs sm:text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 cursor-pointer"
+                  className="w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 min-h-[48px] cursor-pointer"
                 >
                   <option value="09:00">09:00 AM</option>
                   <option value="10:00">10:00 AM</option>

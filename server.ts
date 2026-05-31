@@ -11,7 +11,7 @@ dotenv.config();
 // Initialize Firebase Admin safely
 if (dbAdmin.apps.length === 0) {
   dbAdmin.initializeApp({
-    projectId: "north-cobb-detailing"
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID || "north-cobb-detailing"
   });
 }
 const firestoreDb = getFirestore(dbAdmin.app(), "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038");

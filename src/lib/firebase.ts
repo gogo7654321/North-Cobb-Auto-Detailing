@@ -9,14 +9,14 @@ import {
   User 
 } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
-// Your custom Firebase configuration as requested
+// Your custom Firebase configuration loaded securely from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyDOyFrxMQg35aQ2_kCIPBb8nfK73e3Wg7Y",
-  authDomain: "north-cobb-detailing.firebaseapp.com",
-  projectId: "north-cobb-detailing",
-  storageBucket: "north-cobb-detailing.firebasestorage.app",
-  messagingSenderId: "358514521886",
-  appId: "1:358514521886:web:446c71cef8924433a77b0f"
+  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
+  authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase App
