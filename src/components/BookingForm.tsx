@@ -238,7 +238,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   };
 
   const getInputClassName = (isValid: boolean, touched: boolean) => {
-    const base = "w-full bg-[#fdfbf8] border-2 rounded-xl px-4 py-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all duration-200 min-h-[48px]";
+    const base = "w-full block max-w-full bg-[#fdfbf8] border-2 rounded-xl px-4 py-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all duration-200 min-h-[48px]";
     if (!touched) return `${base} border-[#e6dccf] focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20`;
     return isValid
       ? `${base} border-emerald-600 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/10 bg-emerald-50/5`
@@ -477,7 +477,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     id="booking_input_service"
                     value={service}
                     onChange={(e) => setService(e.target.value as BookingServiceType)}
-                    className="w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 appearance-none cursor-pointer"
+                    className="w-full block max-w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 appearance-none cursor-pointer"
                   >
                     <option value="Exterior Detail">Exterior</option>
                     <option value="Interior Detail">Interior</option>
@@ -499,7 +499,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     id="booking_input_vehicle_type"
                     value={vehicleType}
                     onChange={(e) => setVehicleType(e.target.value)}
-                    className="w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 appearance-none cursor-pointer"
+                    className="w-full block max-w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 appearance-none cursor-pointer"
                   >
                     <option value="Sedan / Coupe">Sedan / Coupe</option>
                     <option value="Crossover / Small SUV">Crossover / Small SUV</option>
@@ -560,7 +560,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                   id="booking_input_time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  className="w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 min-h-[48px] cursor-pointer"
+                  className="w-full block max-w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 min-h-[48px] cursor-pointer"
                 >
                   <option value="09:00">09:00 AM</option>
                   <option value="10:00">10:00 AM</option>
