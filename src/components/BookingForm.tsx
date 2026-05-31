@@ -238,7 +238,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   };
 
   const getInputClassName = (isValid: boolean, touched: boolean) => {
-    const base = "w-full block max-w-full bg-[#fdfbf8] border-2 rounded-xl px-4 py-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all duration-200 min-h-[48px]";
+    const base = "w-full block max-w-full min-w-0 box-border appearance-none bg-[#fdfbf8] border-2 rounded-xl px-4 py-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all duration-200 min-h-[48px]";
     if (!touched) return `${base} border-[#e6dccf] focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20`;
     return isValid
       ? `${base} border-emerald-600 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/10 bg-emerald-50/5`

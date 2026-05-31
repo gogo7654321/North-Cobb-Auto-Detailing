@@ -6,3 +6,19 @@
   --font-serif: "Outfit", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, monospace;
 }
+
+/* Fix iOS Safari date input width overflow & alignment */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box !important;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-height: 1.5em;
+  text-align: left;
+}
+
