@@ -234,13 +234,8 @@ export default function App() {
                   <button
                     id="hero_cta_book_now"
                     onClick={() => {
-                      const element = document.getElementById("booking_section_view");
-                      if (element) {
-                        element.scrollIntoView({ behavior: "smooth" });
-                      } else {
-                        setSelectedTab("book");
-                        window.location.hash = "#book";
-                      }
+                      setSelectedTab("book");
+                      window.location.hash = "#book";
                     }}
                     className="px-8 py-4 bg-[#b45309] hover:bg-[#9a3412] text-white font-black text-xs tracking-widest uppercase transition-all duration-200 cursor-pointer"
                     style={{ borderRadius: "8px 2px 8px 2px" }}
@@ -275,23 +270,30 @@ export default function App() {
 
               </div>
 
-              {/* HERO RIGHT COLUMN: INSTANT DIRECT BOOKING FORM (The very first thing customers see) */}
-              <div id="booking_section_view" className="flex-1 flex items-center justify-center relative animate-in zoom-in-95 duration-350">
-                <div className="relative w-full max-w-md bg-white border-2 border-[#2e261f] p-6 sm:p-8 shadow-sm"
+              {/* HERO RIGHT COLUMN: SHOWCASE BRAND PHOTOGRAPHY */}
+              <div className="flex-1 flex items-center justify-center relative animate-in zoom-in-95 duration-350">
+                <div className="relative w-full max-w-lg bg-white border-2 border-[#2e261f] p-3 shadow-md"
                   style={{ borderRadius: "24px 2px 24px 2px" }}
                 >
-                  <div className="absolute -top-3.5 -right-3 px-3.5 py-1 bg-amber-100 text-[#b45309] font-sans text-[10px] font-bold tracking-wider border-2 border-[#2e261f] rounded-lg shadow">
-                    SECURE REQUEST
+                  <div className="absolute -top-3.5 -right-3 px-3.5 py-1 bg-amber-100 text-[#b45309] font-sans text-[10px] font-bold tracking-wider border-2 border-[#2e261f] rounded-lg shadow uppercase">
+                    Our Handiwork
                   </div>
                   
-                  <div className="text-center mb-6">
-                    <h3 className="text-base font-serif font-black text-[#2e261f] uppercase tracking-tight">
-                      REQUEST DETAILING SESSION
-                    </h3>
-                    <p className="text-xs text-amber-700 font-sans font-semibold mt-1">Arthur & Carson's Local Driveway Openings</p>
+                  <div className="overflow-hidden border border-[#e6dccf]"
+                    style={{ borderRadius: "18px 2px 18px 2px" }}
+                  >
+                    <img 
+                      src="/impala close up cinematic front.jpeg" 
+                      alt="Arthur and Carson's handiwork" 
+                      className="w-full h-auto object-cover max-h-[380px] hover:scale-105 transition-transform duration-500"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
                   
-                  <BookingForm initialService={passedService} />
+                  <div className="p-4 text-center mt-1">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-[#b45309] font-black block">Featured Restorative Work</span>
+                    <p className="text-xs text-[#5c544a] italic mt-1 font-serif">Mirror reflection hand-polish completed on a client's sedan.</p>
+                  </div>
                 </div>
               </div>
             </section>

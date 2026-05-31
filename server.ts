@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import dbAdmin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
+import nodemailer from "nodemailer";
 
 // Load environment variables
 dotenv.config();
@@ -58,8 +59,11 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
 
     let ownerAlertSuccess = false;
 
-    // Send Admin Notification Email via Gmail API to "everybody who has auth in the owner portal"
-    if (accessToken) {
+    // Send Admin Notification Email via Gmail API or Nodemailer SMTP to "everybody who has auth in the owner portal"
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    const senderEmail = process.env.SENDER_EMAIL || "northcobbdetailing@gmail.com";
+
+    if (gmailAppPassword || accessToken) {
       try {
         const [datePart, timePart] = (booking.dateTime || "").split("T");
         const [year, month, day] = (datePart || "").split("-");
@@ -87,10 +91,8 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
         const finalRecipients = Array.from(dynamicEmails);
 
         const subject = `🚨 Action Required: New Detailing Job Requested - ${booking.service}`;
-        
-        let sentCount = 0;
-        for (const recipient of finalRecipients) {
-          const htmlContent = `<!DOCTYPE html>
+
+        const htmlContent = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -218,35 +220,69 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
 </body>
 </html>`;
 
-          const rawMime = [
-            `To: ${recipient}`,
-            `Subject: ${subject}`,
-            `Content-Type: text/html; charset="utf-8"`,
-            `MIME-Version: 1.0`,
-            ``,
-            htmlContent
-          ].join("\r\n");
+        let sentCount = 0;
 
-          const base64Mime = Buffer.from(rawMime, "utf-8")
-            .toString("base64")
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/, "");
-
-          const mailRes = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ raw: base64Mime })
+        if (gmailAppPassword) {
+          console.log(`[Cloud Function Proxy] Dispatching stable notifications via Nodemailer SMTP for ${senderEmail}...`);
+          const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: senderEmail,
+              pass: gmailAppPassword
+            }
           });
 
-          if (mailRes.ok) {
-            sentCount++;
-          } else {
-            const mailErrText = await mailRes.text();
-            console.error(`[Cloud Function Proxy] Gmail dispatch failed for ${recipient}:`, mailErrText);
+          for (const recipient of finalRecipients) {
+            try {
+              await transporter.sendMail({
+                from: `"North Cobb Detailing Automation" <${senderEmail}>`,
+                to: recipient,
+                subject: subject,
+                html: htmlContent
+              });
+              sentCount++;
+              console.log(`[Cloud Function Proxy] SMTP alert email successfully dispatched to ${recipient}`);
+            } catch (smtpErr) {
+              console.error(`[Cloud Function Proxy] Nodemailer SMTP dispatch failed for ${recipient}:`, smtpErr);
+            }
+          }
+        } else if (accessToken) {
+          console.log(`[Cloud Function Proxy] OAuth Token detected. Attempting Google REST API dispatch...`);
+          for (const recipient of finalRecipients) {
+            try {
+              const rawMime = [
+                `To: ${recipient}`,
+                `Subject: ${subject}`,
+                `Content-Type: text/html; charset="utf-8"`,
+                `MIME-Version: 1.0`,
+                ``,
+                htmlContent
+              ].join("\r\n");
+
+              const base64Mime = Buffer.from(rawMime, "utf-8")
+                .toString("base64")
+                .replace(/\+/g, "-")
+                .replace(/\//g, "_")
+                .replace(/=+$/, "");
+
+              const mailRes = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${accessToken}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ raw: base64Mime })
+              });
+
+              if (mailRes.ok) {
+                sentCount++;
+              } else {
+                const mailErrText = await mailRes.text();
+                console.error(`[Cloud Function Proxy] Gmail OAuth dispatch failed for ${recipient}:`, mailErrText);
+              }
+            } catch (apiErr) {
+              console.error(`[Cloud Function Proxy] Exception during Gmail REST API dispatch for ${recipient}:`, apiErr);
+            }
           }
         }
 
@@ -255,8 +291,10 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
           console.log(`[Cloud Function Proxy] Sent alert emails to ${sentCount} owner(s).`);
         }
       } catch (mailErr: any) {
-        console.error("[Cloud Function Proxy] Gmail API dispatch exception:", mailErr);
+        console.error("[Cloud Function Proxy] Gmail API/SMTP dispatch exception:", mailErr);
       }
+    } else {
+      console.log("[Cloud Function Proxy] Owner alert email skipped. Neither GMAIL_APP_PASSWORD nor OAuth accessToken is available.");
     }
 
     // Keep the Firestore booking in 'pending' status so the owners can accept it in portal
