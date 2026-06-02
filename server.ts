@@ -266,7 +266,7 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
               <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
                   <td align="center">
-                    <a href="https://ais-pre-pdd643ltb6srk7p2d4lfjr-307654656669.us-east5.run.app/#owner-portal" target="_blank" style="display: inline-block; background-color: #b45309; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: bold; padding: 14px 28px; border-radius: 8px 2px 8px 2px; text-transform: uppercase; letter-spacing: 0.05em; box-shadow: 0 4px 6px rgba(180, 83, 9, 0.15); transition: background-color 0.15s ease;">
+                    <a href="https://northcobbdetailing.com/#owner-portal" target="_blank" style="display: inline-block; background-color: #b45309; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: bold; padding: 14px 28px; border-radius: 8px 2px 8px 2px; text-transform: uppercase; letter-spacing: 0.05em; box-shadow: 0 4px 6px rgba(180, 83, 9, 0.15); transition: background-color 0.15s ease;">
                       Open Owner Portal & Accept Job
                     </a>
                   </td>
