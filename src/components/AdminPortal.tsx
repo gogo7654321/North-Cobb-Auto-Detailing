@@ -48,6 +48,7 @@ export default function AdminPortal() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isInIframe, setIsInIframe] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [showAuthWarning, setShowAuthWarning] = useState(false);
 
   const authorizedEmails = ["npatel012010@gmail.com", "northcobbdetailing@gmail.com"];
 
@@ -148,8 +149,12 @@ export default function AdminPortal() {
 
   const handleLogin = async (method: "popup" | "redirect" = "popup") => {
     setErrorMessage("");
+    // Standard solution for mobile browsers: default to redirect-based sign-in to prevent orphaned popup handlers
+    const isMobileDevice = typeof window !== "undefined" && typeof navigator !== "undefined" && 
+      /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const chosenMethod = isMobileDevice ? "redirect" : method;
     try {
-      const res = await googleSignIn(method);
+      const res = await googleSignIn(chosenMethod);
       if (res) {
         if (authorizedEmails.includes(res.user.email || "")) {
           setIsAdminAuth(true);
@@ -277,7 +282,7 @@ export default function AdminPortal() {
   };
 
   // Gmail API Dispatcher formatted as standard MIME Base64
-  const sendMimeGmailConfirmation = async (booking: Booking, token: string) => {
+  const sendMimeGmailConfirmation = async (booking: Booking, token: string | null, fallbackCalendar: boolean = false) => {
     const [datePart, timePart] = (booking.dateTime || "").split("T");
     const [year, month, day] = (datePart || "").split("-");
     const [hour, minute] = (timePart || "00:00:00").split(":");
@@ -446,35 +451,73 @@ export default function AdminPortal() {
 </body>
 </html>`;
 
-    const rawMime = [
-      `To: ${booking.email}`,
-      `Subject: ${subject}`,
-      `Content-Type: text/html; charset="utf-8"`,
-      `MIME-Version: 1.0`,
-      ``,
-      htmlContent
-    ].join("\r\n");
+    if (token) {
+      try {
+        const rawMime = [
+          `To: ${booking.email}`,
+          `Subject: ${subject}`,
+          `Content-Type: text/html; charset="utf-8"`,
+          `MIME-Version: 1.0`,
+          ``,
+          htmlContent
+        ].join("\r\n");
 
-    // Convert MIME to Base64url safe string representation
-    const base64Mime = btoa(unescape(encodeURIComponent(rawMime)))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
+        // Convert MIME to Base64url safe string representation
+        const base64Mime = btoa(unescape(encodeURIComponent(rawMime)))
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
 
-    const response = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
+        const response = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ raw: base64Mime })
+        });
+
+        if (response.ok) {
+          return await response.json();
+        }
+        
+        const errorText = await response.text();
+        console.warn(`Direct Google OAuth send failed: ${errorText}. Cascading to server-side backup SMTP...`);
+      } catch (directErr) {
+        console.warn(`Direct Google OAuth send exception:`, directErr);
+      }
+    }
+
+    // Server-side fallback via SMTP App Password
+    console.log("Triggering server-side fallback email dispatch via /api/send-customer-confirmation...");
+    const serverResponse = await fetch("/api/send-customer-confirmation", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ raw: base64Mime })
+      body: JSON.stringify({
+        recipientEmail: booking.email,
+        subject,
+        htmlContent,
+        calendarEvent: fallbackCalendar ? {
+          bookingId: booking.id,
+          name: booking.name,
+          email: booking.email,
+          phone: booking.phone || "",
+          dateTime: booking.dateTime,
+          service: booking.service,
+          vehicleType: booking.vehicleType || "Sedan / Coupe",
+          price: booking.price + getVehicleTypePriceAdjustment(booking.vehicleType)
+        } : undefined
+      })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gmail API error: ${errorText}`);
+    if (!serverResponse.ok) {
+      const fallbackErrText = await serverResponse.text();
+      throw new Error(`Direct Google OAuth & Server Backup SMTP both failed. SMTP logs: ${fallbackErrText}`);
     }
-    return await response.json();
+
+    return await serverResponse.json();
   };
 
   const resolveSendCredentials = async () => {
@@ -516,6 +559,7 @@ export default function AdminPortal() {
 
       // 1. Google Calendar dispatch (if authorized)
       let calendarEventId: string | undefined = undefined;
+      let calendarDispatchFailed = false;
       if (sendToken) {
         try {
           const calEventResult = await createGoogleCalendarEvent(booking, sendToken);
@@ -524,22 +568,24 @@ export default function AdminPortal() {
           }
           addLog(`- Google Calendar: Added event containing all admin calendars.`);
         } catch (calError: any) {
-          addLog(`- Google Calendar Alert: Unable to schedule: ${calError.message}`);
+          calendarDispatchFailed = true;
+          const isAuthErr = calError.message?.includes("401") || calError.message?.toLowerCase().includes("auth") || calError.message?.toLowerCase().includes("credential");
+          if (isAuthErr) {
+            setShowAuthWarning(true);
+          }
+          addLog(`- Google Calendar Alert: Unable to schedule: ${calError.message}. Triggering self-healing SMTP Calendar invite fallback...`);
         }
       } else {
-        addLog(`- Google Calendar: Skipped (Offline/Direct mode).`);
+        calendarDispatchFailed = true;
+        addLog(`- Google Calendar: Skipped (Offline/Direct mode). Triggering self-healing SMTP Calendar invite fallback...`);
       }
 
-      // 2. Gmail dispatch (if authorized)
-      if (sendToken) {
-        try {
-          await sendMimeGmailConfirmation(booking, sendToken);
-          addLog(`- Gmail Alerts: Emailed receipt to ${booking.email} from ${emailSentFrom} successfully.`);
-        } catch (mailError: any) {
-          addLog(`- Gmail Alert: Failed to email customer: ${mailError.message}`);
-        }
-      } else {
-        addLog(`- Gmail Alert: Skipped (Offline/Direct mode).`);
+      // 2. Gmail dispatch (prefers Google OAuth, falls back to server-side SMTP)
+      try {
+        await sendMimeGmailConfirmation(booking, sendToken, calendarDispatchFailed);
+        addLog(`- Gmail Alerts: Emailed receipt to ${booking.email} successfully.`);
+      } catch (mailError: any) {
+        addLog(`- Gmail Alert: Failed to email customer: ${mailError.message}`);
       }
 
       // 3. Update Firestore database state keys
@@ -596,6 +642,10 @@ export default function AdminPortal() {
   };
 
   const handleDelete = async (booking: Booking) => {
+    if (booking.status === "completed") {
+      addLog(`Delete rejected: Booking for ${booking.name} is already COMPLETED and cannot be deleted.`);
+      return;
+    }
     const confirmed = window.confirm(`DELETE booking for ${booking.name} entirely from Firestore? This action is IRREVERSIBLE.`);
     if (!confirmed) return;
 
@@ -695,29 +745,69 @@ export default function AdminPortal() {
           </div>
         )}
 
-        <div className="mt-6 space-y-3">
-          {/* Method 1: Popup Sign In Button */}
-          <button
-            id="admin_oauth_signin_popup_btn"
-            onClick={() => handleLogin("popup")}
-            className="w-full py-3 bg-[#b45309] hover:bg-[#9a3412] text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2.5"
-            style={{ borderRadius: "8px 2px 8px 2px" }}
-          >
-            <Unlock className="w-4 h-4" />
-            Sign In (Google Pop-up)
-          </button>
+        {/* Render buttons dynamically for desktop vs mobile to completely prevent popup redirection loops */}
+        {(() => {
+          const isMobileDevice = typeof window !== "undefined" && typeof navigator !== "undefined" && 
+            /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          
+          if (isMobileDevice) {
+            return (
+              <div className="mt-6 space-y-3 text-left">
+                <div className="bg-amber-50 border border-amber-200/60 p-3 rounded-lg text-[11px] text-amber-950 leading-relaxed mb-1">
+                  <span className="font-extrabold block mb-1">📱 Mobile Device / Touch Mode:</span>
+                  To avoid getting stuck on a blank Firebase authentication screen, we have pre-activated <strong>Mobile-Secure Redirect Mode</strong>. This will redirect you to Google's sign-in page and bring you straight back to the owner portal dashboard automatically.
+                </div>
+                
+                {/* Mobile Safe Primary Redirect Button */}
+                <button
+                  id="admin_oauth_signin_redirect_btn"
+                  onClick={() => handleLogin("redirect")}
+                  className="w-full py-3 bg-[#b45309] hover:bg-[#9a3412] text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2.5"
+                  style={{ borderRadius: "8px 2px 8px 2px" }}
+                >
+                  <Smartphone className="w-4 h-4 animate-bounce" />
+                  Sign In (Mobile-Secure Redirect)
+                </button>
 
-          {/* Method 2: Redirect Sign In Button (Mobile and secure browser fallback) */}
-          <button
-            id="admin_oauth_signin_redirect_btn"
-            onClick={() => handleLogin("redirect")}
-            className="w-full py-2.5 bg-white border border-[#e6dccf] text-[#5c544a] hover:text-[#2e261f] hover:bg-[#faf8f5] font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-            style={{ borderRadius: "8px 2px 8px 2px" }}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
-            Switch to Mobile Redirect Mode
-          </button>
-        </div>
+                <button
+                  id="admin_oauth_signin_popup_btn"
+                  onClick={() => handleLogin("popup")}
+                  className="w-full py-2 bg-white border border-[#e6dccf] text-[#5c544a] hover:text-[#2e261f] hover:bg-[#faf8f5] font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                  style={{ borderRadius: "8px 2px 8px 2px" }}
+                >
+                  <Unlock className="w-3 h-3 text-zinc-500" />
+                  Attempt Popup handshake anyway
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <div className="mt-6 space-y-3">
+              {/* Method 1: Popup Sign In Button */}
+              <button
+                id="admin_oauth_signin_popup_btn"
+                onClick={() => handleLogin("popup")}
+                className="w-full py-3 bg-[#b45309] hover:bg-[#9a3412] text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2.5"
+                style={{ borderRadius: "8px 2px 8px 2px" }}
+              >
+                <Unlock className="w-4 h-4" />
+                Sign In (Google Pop-up)
+              </button>
+
+              {/* Method 2: Redirect Sign In Button (Mobile and secure browser fallback) */}
+              <button
+                id="admin_oauth_signin_redirect_btn"
+                onClick={() => handleLogin("redirect")}
+                className="w-full py-2.5 bg-white border border-[#e6dccf] text-[#5c544a] hover:text-[#2e261f] hover:bg-[#faf8f5] font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                style={{ borderRadius: "8px 2px 8px 2px" }}
+              >
+                <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
+                Switch to Mobile Redirect Mode
+              </button>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -767,6 +857,34 @@ export default function AdminPortal() {
           </button>
         </div>
       </div>
+
+      {showAuthWarning && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-[#7f1d1d] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in"
+          style={{ borderRadius: "8px 2px 8px 2px" }}
+        >
+          <div className="flex gap-3 text-xs leading-relaxed text-left">
+            <span className="text-lg">🔑</span>
+            <div>
+              <strong className="block font-black font-serif text-sm text-[#7f1d1d]">Google Calendar Auth Expired</strong>
+              Your Google login token has expired or is invalid. Real-time Google Calendar sync is offline. Click renew to re-authorize instantly.
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              try {
+                await handleLogin("popup");
+                setShowAuthWarning(false);
+              } catch (err) {
+                console.error(err);
+              }
+            }}
+            className="px-3 py-1.5 bg-[#b45309] hover:bg-[#92400e] text-white text-[10px] font-bold font-mono uppercase tracking-wider rounded transition-all active:scale-95 cursor-pointer whitespace-nowrap self-start sm:self-center"
+            style={{ borderRadius: "4px 2px 4px 2px" }}
+          >
+            Renew Google Handshake
+          </button>
+        </div>
+      )}
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -963,14 +1081,16 @@ export default function AdminPortal() {
                       </button>
                     )}
 
-                    <button
-                      id={`crm_delete_${booking.id}`}
-                      onClick={() => handleDelete(booking)}
-                      className="p-2 border border-[#e6dccf] text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-all duration-150 cursor-pointer"
-                      style={{ borderRadius: "6px 2px 6px 2px" }}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {booking.status !== "completed" && (
+                      <button
+                        id={`crm_delete_${booking.id}`}
+                        onClick={() => handleDelete(booking)}
+                        className="p-2 border border-[#e6dccf] text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-all duration-150 cursor-pointer"
+                        style={{ borderRadius: "6px 2px 6px 2px" }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

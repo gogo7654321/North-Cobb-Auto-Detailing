@@ -74,10 +74,10 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   // Get service price mapping to display and write
   const getPrice = (type: BookingServiceType) => {
     switch (type) {
-      case "Exterior Detail": return 45;
-      case "Interior Detail": return 65;
-      case "Full Detail": return 100;
-      default: return 45;
+      case "Exterior Detail": return 50;
+      case "Interior Detail": return 80;
+      case "Full Detail": return 120;
+      default: return 50;
     }
   };
 
@@ -185,25 +185,25 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
     }
 
     try {
-      // 1. Save directly to secure firestore with explicit timeout protection
-      await promiseWithTimeout(
-        setDoc(doc(db, "bookings", bookingId), bookingPayload),
-        5000,
-        "FIRESTORE_WRITE_TIMEOUT"
-      );
-
-      // 2. Call our Google Cloud Function proxy backend to process the automation sequences
+      // 1. Call our Google Cloud Function proxy backend to process the automation sequences first so it is never blocked
       try {
         const response = await fetch("/api/cloud-functions-booking", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bookingId })
+          body: JSON.stringify({ bookingId, bookingData: bookingPayload })
         });
         const cfData = await response.json();
         console.log("[Cloud Function booking sequence active]:", cfData);
       } catch (cfErr) {
         console.error("Cloud function automated notification trigger failed:", cfErr);
       }
+
+      // 2. Save directly to secure firestore with explicit timeout protection
+      await promiseWithTimeout(
+        setDoc(doc(db, "bookings", bookingId), bookingPayload),
+        5000,
+        "FIRESTORE_WRITE_TIMEOUT"
+      );
       
       setSuccess(true);
       setName("");

@@ -263,7 +263,7 @@ export default function App() {
                     <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider font-bold">Fast Turnaround</span>
                   </div>
                   <div>
-                    <span className="text-xl font-serif font-black text-[#2e261f] block">$45 - $100</span>
+                    <span className="text-xl font-serif font-black text-[#2e261f] block">$50 - $120</span>
                     <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider font-bold">Estimated Base Rates</span>
                   </div>
                 </div>

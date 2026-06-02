@@ -32,45 +32,52 @@ service cloud.firestore {
 
     function isValidBooking(data) {
       return data.keys().hasAll(['name', 'phone', 'email', 'service', 'price', 'dateTime', 'status', 'createdAt']) &&
-             data.size() >= 8 && data.size() <= 10 &&
+             data.size() >= 8 && data.size() <= 12 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
              data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 32 &&
              data.email is string && data.email.size() <= 256 && data.email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$') &&
              data.service is string && data.service.size() <= 64 && data.service in ['Exterior Detail', 'Interior Detail', 'Full Detail'] &&
              data.price is number && (
-               (data.service == 'Exterior Detail' && data.price == 45) ||
-               (data.service == 'Interior Detail' && data.price == 65) ||
-               (data.service == 'Full Detail' && data.price == 100)
+               (data.service == 'Exterior Detail' && data.price == 50) ||
+               (data.service == 'Interior Detail' && data.price == 80) ||
+               (data.service == 'Full Detail' && data.price == 120)
              ) &&
              data.dateTime is string && data.dateTime.size() <= 64 &&
-             timestamp(data.dateTime + 'Z') >= request.time &&
              timestamp(data.dateTime + 'Z').hour() >= 9 &&
              timestamp(data.dateTime + 'Z').hour() < 18 &&
              (!('notes' in data) || (data.notes is string && data.notes.size() <= 2048)) &&
              (!('vehicleType' in data) || (data.vehicleType is string && data.vehicleType.size() <= 128)) &&
-             (data.size() == 8 ||
-              (data.size() == 9 && ('notes' in data || 'vehicleType' in data)) ||
-              (data.size() == 10 && 'notes' in data && 'vehicleType' in data)) &&
-             data.status is string && data.status.size() <= 32 && data.status in ['pending', 'confirmed', 'cancelled'] &&
-             data.createdAt is string && data.createdAt.size() <= 64 &&
-             timestamp(data.createdAt) <= request.time + duration.value(5, 'm') &&
-             timestamp(data.createdAt) >= request.time - duration.value(5, 'm');
+             (!('calendarEventId' in data) || (data.calendarEventId is string && data.calendarEventId.size() <= 512)) &&
+             (!('actualRevenue' in data) || (data.actualRevenue is number && data.actualRevenue >= 0)) &&
+             data.status is string && data.status.size() <= 32 && data.status in ['pending', 'confirmed', 'cancelled', 'completed'] &&
+             data.createdAt is string && data.createdAt.size() <= 64;
     }
 
     // --- Bookings Collection Rules ---
     match /bookings/{bookingId} {
       allow get, list: if isVerifiedOwner();
-      allow delete: if isVerifiedOwner() && isValidId(bookingId);
+      allow delete: if isVerifiedOwner() && 
+                       isValidId(bookingId) && 
+                       existing().status != 'completed';
 
       allow create: if isValidId(bookingId) &&
                        isValidBooking(incoming()) &&
-                       incoming().status == 'pending';
+                       incoming().status == 'pending' &&
+                       timestamp(incoming().dateTime + 'Z') >= request.time &&
+                       timestamp(incoming().createdAt) <= request.time + duration.value(5, 'm') &&
+                       timestamp(incoming().createdAt) >= request.time - duration.value(5, 'm');
 
       allow update: if isVerifiedOwner() &&
                        isValidId(bookingId) &&
+                       existing().status != 'completed' &&
                        isValidBooking(incoming()) &&
                        incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+                       (
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status']) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'actualRevenue']) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly(['calendarEventId']) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'calendarEventId'])
+                       );
     }
 
     // --- Admin Config Collection Rules ---

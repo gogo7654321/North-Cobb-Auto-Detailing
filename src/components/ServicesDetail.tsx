@@ -5,7 +5,7 @@ import { DetailingService } from "../types";
 const SERVICE_TIERS: DetailingService[] = [
   {
     name: "Exterior Detail",
-    price: 45,
+    price: 50,
     duration: "1 hour",
     description: "Full exterior hand wash using professional foam cannon and microfiber mitts. Wheels, tires, and rims thoroughly scrubbed. Vehicle is rinsed and hand-dried with soft microfiber towels. Premium tire and plastic dressing applied for UV protection and a restored shine.",
     features: [
@@ -19,7 +19,7 @@ const SERVICE_TIERS: DetailingService[] = [
   },
   {
     name: "Interior Detail",
-    price: 65,
+    price: 80,
     duration: "1.5 hours",
     description: "Complete interior cleaning including custom vacuuming seats, carpets, and trunk. All surfaces wiped down and detailed (dash, doors, center console). Crevices thoroughly cleared. Weather mat restoration included. All interior glass cleaned for a streak-free finish.",
     features: [
@@ -32,7 +32,7 @@ const SERVICE_TIERS: DetailingService[] = [
   },
   {
     name: "Full Detail",
-    price: 100,
+    price: 120,
     duration: "Under 3 hours",
     description: "The ultimate bumper-to-bumper reset. Combines both full interior and exterior details. (Note: prices are estimates and vary depending on vehicle size and dirtiness).",
     features: [

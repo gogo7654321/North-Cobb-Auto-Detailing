@@ -38,9 +38,9 @@ service cloud.firestore {
              data.email is string && data.email.size() <= 256 && data.email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$') &&
              data.service is string && data.service.size() <= 64 && data.service in ['Exterior Detail', 'Interior Detail', 'Full Detail'] &&
              data.price is number && (
-               (data.service == 'Exterior Detail' && data.price == 45) ||
-               (data.service == 'Interior Detail' && data.price == 65) ||
-               (data.service == 'Full Detail' && data.price == 100)
+               (data.service == 'Exterior Detail' && data.price == 50) ||
+               (data.service == 'Interior Detail' && data.price == 80) ||
+               (data.service == 'Full Detail' && data.price == 120)
              ) &&
              data.dateTime is string && data.dateTime.size() <= 64 &&
              timestamp(data.dateTime + 'Z') >= request.time &&

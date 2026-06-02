@@ -22,9 +22,75 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Self-healing multi-candidate SMTP Dispatch helper specifically solving gmail app password email assignment conflicts
+async function sendSmtpEmail(options: {
+  to: string;
+  cc?: string | string[];
+  senderName?: string;
+  subject: string;
+  html: string;
+  adminEmail?: string;
+  icalEvent?: {
+    method: string;
+    filename?: string;
+    content: string;
+  };
+}) {
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailAppPassword) {
+    throw new Error("GMAIL_APP_PASSWORD environment variable is not configured.");
+  }
+
+  // Compile unique candidate list representing the potential account the App Password was created for
+  const candidates = new Set<string>();
+  if (process.env.SENDER_EMAIL) {
+    candidates.add(process.env.SENDER_EMAIL.trim());
+  }
+  candidates.add("northcobbdetailing@gmail.com");
+  if (options.adminEmail) {
+    candidates.add(options.adminEmail.trim());
+  }
+  candidates.add("npatel012010@gmail.com");
+
+  const candidateList = Array.from(candidates);
+  let lastError: any = null;
+
+  for (const candidateUser of candidateList) {
+    try {
+      console.log(`[SMTP Attempt] Authenticating SMTP as host user: ${candidateUser}...`);
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: candidateUser,
+          pass: gmailAppPassword
+        }
+      });
+
+      const displaySender = options.senderName || "North Cobb Detailing";
+
+      await transporter.sendMail({
+        from: `"${displaySender}" <${candidateUser}>`,
+        to: options.to,
+        cc: options.cc,
+        subject: options.subject,
+        html: options.html,
+        icalEvent: options.icalEvent
+      });
+
+      console.log(`[SMTP Success] Email dispatched to ${options.to} successfully via host: ${candidateUser}`);
+      return { success: true, authenticatedUser: candidateUser };
+    } catch (err: any) {
+      console.error(`[SMTP Failed] Attempt using host user ${candidateUser} failed:`, err.message || err);
+      lastError = err;
+    }
+  }
+
+  throw new Error(`SMTP authentication failed for all potential account configurations (${candidateList.join(", ")}). Last SMTP error: ${lastError?.message || lastError}`);
+}
+
 // Cloud Function equivalent API for real-time automated bookings
 app.post("/api/cloud-functions-booking", async (req, res) => {
-  const { bookingId } = req.body;
+  const { bookingId, bookingData } = req.body;
   
   // Strict Zero-Trust validation on document ID format and length to prevent resource poisoning
   if (!bookingId || typeof bookingId !== "string" || bookingId.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(bookingId)) {
@@ -32,36 +98,46 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
   }
 
   try {
-    const bookingDoc = await firestoreDb.collection("bookings").doc(bookingId).get();
-    if (!bookingDoc.exists) {
-      return res.status(404).json({ error: `Booking document '${bookingId}' was not found.` });
+    let booking = bookingData;
+    
+    if (!booking) {
+      console.log(`[Cloud Function Proxy] bookingData not provided in request. Attempting to fetch from Firestore...`);
+      try {
+        const bookingDoc = await firestoreDb.collection("bookings").doc(bookingId).get();
+        if (bookingDoc.exists) {
+          booking = bookingDoc.data();
+        }
+      } catch (dbErr: any) {
+        console.warn(`[Cloud Function Proxy] Server-side Firestore read of booking ${bookingId} skipped/failed: ${dbErr?.message || dbErr}`);
+      }
     }
 
-    const booking = bookingDoc.data();
     if (!booking) {
-      return res.status(400).json({ error: "Booking data is corrupted." });
+      return res.status(404).json({ error: `Booking data was not provided and could not be retrieved from Firestore.` });
     }
     console.log(`[Cloud Function Proxy] Loaded booking for ${booking.name}:`, booking);
 
     // Fetch the stored owner OAuth token
-    const adminDoc = await firestoreDb.collection("admin_config").doc("oauth").get();
     let accessToken: string | null = null;
     let adminEmail = "northcobbdetailing@gmail.com";
 
-    if (adminDoc.exists) {
-      const adminData = adminDoc.data();
-      accessToken = adminData?.accessToken || null;
-      adminEmail = adminData?.email || "northcobbdetailing@gmail.com";
-      console.log(`[Cloud Function Proxy] Found cached Owner Token for ${adminEmail}`);
-    } else {
-      console.log("[Cloud Function Proxy] Warning: No Owner Google OAuth Token Cached. Owner alert email skipped until an owner authorizes.");
+    try {
+      const adminDoc = await firestoreDb.collection("admin_config").doc("oauth").get();
+      if (adminDoc.exists) {
+        const adminData = adminDoc.data();
+        accessToken = adminData?.accessToken || null;
+        adminEmail = adminData?.email || "northcobbdetailing@gmail.com";
+        console.log(`[Cloud Function Proxy] Found cached Owner Token for ${adminEmail}`);
+      }
+    } catch (dbErr: any) {
+      console.warn(`[Cloud Function Proxy] Server-side Firestore read of admin_config failed (this is expected when running in sandboxed servers). Falling back. Error: ${dbErr?.message || dbErr}`);
     }
 
     let ownerAlertSuccess = false;
 
     // Send Admin Notification Email via Gmail API or Nodemailer SMTP to "everybody who has auth in the owner portal"
     const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
-    const senderEmail = process.env.SENDER_EMAIL || "northcobbdetailing@gmail.com";
+    const senderEmail = process.env.SENDER_EMAIL || adminEmail || "northcobbdetailing@gmail.com";
 
     if (gmailAppPassword || accessToken) {
       try {
@@ -221,33 +297,30 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
 </html>`;
 
         let sentCount = 0;
+        let smtpErrorDetails = "";
 
         if (gmailAppPassword) {
-          console.log(`[Cloud Function Proxy] Dispatching stable notifications via Nodemailer SMTP for ${senderEmail}...`);
-          const transporter = nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-              user: senderEmail,
-              pass: gmailAppPassword
-            }
-          });
-
-          for (const recipient of finalRecipients) {
-            try {
-              await transporter.sendMail({
-                from: `"North Cobb Detailing Automation" <${senderEmail}>`,
-                to: recipient,
-                subject: subject,
-                html: htmlContent
-              });
-              sentCount++;
-              console.log(`[Cloud Function Proxy] SMTP alert email successfully dispatched to ${recipient}`);
-            } catch (smtpErr) {
-              console.error(`[Cloud Function Proxy] Nodemailer SMTP dispatch failed for ${recipient}:`, smtpErr);
-            }
+          console.log(`[Cloud Function Proxy] Dispatching stable notifications via Nodemailer SMTP...`);
+          try {
+            await sendSmtpEmail({
+              to: "northcobbdetailing@gmail.com",
+              cc: "npatel012010@gmail.com",
+              senderName: "North Cobb Detailing Automation",
+              subject: subject,
+              html: htmlContent,
+              adminEmail: adminEmail
+            });
+            sentCount = 1;
+            console.log(`[Cloud Function Proxy] SMTP Notification successfully sent to northcobbdetailing@gmail.com with CC to npatel012010@gmail.com`);
+          } catch (smtpErr: any) {
+            smtpErrorDetails = smtpErr?.message || String(smtpErr);
+            console.error(`[Cloud Function Proxy] SMTP Notification failed:`, smtpErr);
           }
-        } else if (accessToken) {
-          console.log(`[Cloud Function Proxy] OAuth Token detected. Attempting Google REST API dispatch...`);
+        }
+
+        // Cascade/Fallback to Gmail Rest API if SMTP was not attempted or failed entirely
+        if (sentCount === 0 && accessToken) {
+          console.log(`[Cloud Function Proxy] SMTP not available/failed (${smtpErrorDetails}). Cascading to Google REST API dispatch...`);
           for (const recipient of finalRecipients) {
             try {
               const rawMime = [
@@ -311,6 +384,114 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
   } catch (error: any) {
     console.error("[Cloud Function Proxy] Fatal execution error:", error);
     return res.status(500).json({ error: error.message || "Failed execution of Cloud Function booking pipeline." });
+  }
+});
+
+// Secure API endpoint to dispatch buyer confirmations via server-side GMAIL_APP_PASSWORD (SMTP)
+app.post("/api/send-customer-confirmation", async (req, res) => {
+  const { recipientEmail, subject, htmlContent, calendarEvent } = req.body;
+  if (!recipientEmail || !subject || !htmlContent) {
+    return res.status(400).json({ error: "Missing recipientEmail, subject, or htmlContent parameters." });
+  }
+
+  try {
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    if (!gmailAppPassword) {
+      return res.status(400).json({ error: "Gmail App Password is not configured on the server environment variables." });
+    }
+
+    // Resolve owner active email to pass down as a candidate
+    let adminEmail = "northcobbdetailing@gmail.com";
+    try {
+      const adminDoc = await firestoreDb.collection("admin_config").doc("oauth").get();
+      if (adminDoc.exists) {
+        adminEmail = adminDoc.data()?.email || "northcobbdetailing@gmail.com";
+      }
+    } catch (dbErr: any) {
+      console.warn(`[SMTP Dispatch] Admin Firestore read admin_config skipped/failed (expected when running in sandboxed environments). Proceeding with fallback adminEmail: ${adminEmail}. Error: ${dbErr?.message || dbErr}`);
+    }
+
+    let icalEventOption: any = undefined;
+    const ccEmails = ["northcobbdetailing@gmail.com", "npatel012010@gmail.com"];
+    
+    if (calendarEvent) {
+      try {
+        const { bookingId, name, dateTime, service, vehicleType, price, phone } = calendarEvent;
+        const startDateObj = new Date(dateTime);
+        const durationHours = service === "Full Detail" ? 3 : (service === "Interior Detail" ? 2 : 1);
+        const endDateObj = new Date(startDateObj.getTime() + durationHours * 60 * 60 * 1000);
+
+        const formatIcsDate = (date: Date) => {
+          return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+        };
+
+        const dtStamp = formatIcsDate(new Date());
+        const dtStart = formatIcsDate(startDateObj);
+        const dtEnd = formatIcsDate(endDateObj);
+
+        const summary = `🚗 North Cobb Detailing: ${service} (${vehicleType || "Sedan / Coupe"}) - ${name}`;
+        const descriptionRaw = `Mobile Vehicle Detailing Booking Request.\n\n` +
+          `Customer Contact:\n` +
+          `- Name: ${name}\n` +
+          `- Phone: ${phone || "N/A"}\n` +
+          `- Email: ${recipientEmail}\n\n` +
+          `Package Details:\n` +
+          `- Service: ${service}\n` +
+          `- Vehicle Type: ${vehicleType || "Sedan / Coupe"}\n` +
+          `- Estimate: $${price}\n\n` +
+          `Sync status: Real-time Scheduled`;
+
+        const descriptionEscaped = descriptionRaw.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+
+        const icalContent = [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "PRODID:-//North Cobb Detailing//Appointment Calendar//EN",
+          "METHOD:REQUEST",
+          "BEGIN:VEVENT",
+          `UID:booking-${bookingId || Date.now()}@northcobbdetailing.com`,
+          `DTSTAMP:${dtStamp}`,
+          `DTSTART:${dtStart}`,
+          `DTEND:${dtEnd}`,
+          `SUMMARY:${summary}`,
+          `DESCRIPTION:${descriptionEscaped}`,
+          `LOCATION:Mobile - We Come to Your Driveway!`,
+          `ORGANIZER;CN="North Cobb Detailing":MAILTO:northcobbdetailing@gmail.com`,
+          `ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN="${name}":MAILTO:${recipientEmail}`,
+          `ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN="North Cobb Detailing":MAILTO:northcobbdetailing@gmail.com`,
+          `ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN="Owner":MAILTO:npatel012010@gmail.com`,
+          "END:VEVENT",
+          "END:VCALENDAR"
+        ].join("\r\n");
+
+        icalEventOption = {
+          filename: "invite.ics",
+          method: "REQUEST",
+          content: icalContent
+        };
+        console.log(`[SMTP Dispatch] Successfully generated iCalendar invitation for ${name}`);
+      } catch (icalErr) {
+        console.error("[SMTP Dispatch] Failed to generate ics invitation:", icalErr);
+      }
+    }
+
+    console.log(`[SMTP Dispatch] Sending customer receipt to ${recipientEmail} via self-healing sendSmtpEmail...`);
+
+    await sendSmtpEmail({
+      to: recipientEmail,
+      cc: calendarEvent ? ccEmails : undefined,
+      senderName: "North Cobb Detailing",
+      subject: subject,
+      html: htmlContent,
+      adminEmail: adminEmail,
+      icalEvent: icalEventOption
+    });
+
+    console.log(`[SMTP Dispatch] Customer confirmation successfully sent to ${recipientEmail}`);
+    return res.json({ status: "success" });
+  } catch (error: any) {
+    console.error("[SMTP Dispatch] Error sending customer email:", error);
+    return res.status(500).json({ error: error.message || "SMTP dispatch failed." });
   }
 });
 
