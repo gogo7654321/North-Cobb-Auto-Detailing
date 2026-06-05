@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import dbAdmin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import nodemailer from "nodemailer";
+import https from "https";
 
 // Load environment variables
 dotenv.config();
@@ -41,16 +42,10 @@ async function sendSmtpEmail(options: {
     throw new Error("GMAIL_APP_PASSWORD environment variable is not configured.");
   }
 
-  // Compile unique candidate list representing the potential account the App Password was created for
+  // Strict Directive: All auto-sent business emails must be routed via "northcobbdetailing@gmail.com".
+  // We completely filter out any other candidate emails (including "npatel012010@gmail.com").
   const candidates = new Set<string>();
-  if (process.env.SENDER_EMAIL) {
-    candidates.add(process.env.SENDER_EMAIL.trim());
-  }
   candidates.add("northcobbdetailing@gmail.com");
-  if (options.adminEmail) {
-    candidates.add(options.adminEmail.trim());
-  }
-  candidates.add("npatel012010@gmail.com");
 
   const candidateList = Array.from(candidates);
   let lastError: any = null;
@@ -319,7 +314,7 @@ app.post("/api/cloud-functions-booking", async (req, res) => {
         }
 
         // Cascade/Fallback to Gmail Rest API if SMTP was not attempted or failed entirely
-        if (sentCount === 0 && accessToken) {
+        if (sentCount === 0 && accessToken && adminEmail === "northcobbdetailing@gmail.com") {
           console.log(`[Cloud Function Proxy] SMTP not available/failed (${smtpErrorDetails}). Cascading to Google REST API dispatch...`);
           for (const recipient of finalRecipients) {
             try {
@@ -493,6 +488,57 @@ app.post("/api/send-customer-confirmation", async (req, res) => {
     console.error("[SMTP Dispatch] Error sending customer email:", error);
     return res.status(500).json({ error: error.message || "SMTP dispatch failed." });
   }
+});
+
+// Proxy Firebase Auth redirect callbacks from the local domain to the original Firebase project domain
+// This resolves Mobile Chrome & Safari blocking cookies/sessionStorage across third-party redirect domains.
+app.all("/__/auth/*", (req, res) => {
+  let authDomain = process.env.VITE_FIREBASE_AUTH_DOMAIN || "north-cobb-detailing.firebaseapp.com";
+  if (authDomain && typeof authDomain === "string") {
+    authDomain = authDomain.trim();
+    if (authDomain.endsWith("/")) {
+      authDomain = authDomain.slice(0, -1);
+    }
+    if (authDomain.toLowerCase().endsWith(".firebaseapp.co")) {
+      authDomain = authDomain.slice(0, -3) + ".com";
+    } else if (authDomain.toLowerCase().endsWith(".co")) {
+      authDomain = authDomain.slice(0, -3) + ".com";
+    }
+  }
+
+  const targetUrl = `https://${authDomain}${req.originalUrl}`;
+  console.log(`[Firebase Auth Proxy] Piping local request [${req.method}] ${req.originalUrl} to auth domain: ${targetUrl}`);
+
+  const urlParsed = new URL(targetUrl);
+  const headers = { ...req.headers };
+  
+  // CRITICAL: Host header must match target authDomain so Google/Firebase CDN routes correctly
+  headers["host"] = authDomain;
+  delete headers["connection"];
+  delete headers["keep-alive"];
+
+  const proxyReq = https.request({
+    method: req.method,
+    hostname: urlParsed.hostname,
+    path: urlParsed.pathname + urlParsed.search,
+    headers: headers,
+    rejectUnauthorized: false
+  }, (proxyRes) => {
+    res.status(proxyRes.statusCode || 200);
+    Object.keys(proxyRes.headers).forEach((key) => {
+      if (!["connection", "keep-alive", "transfer-encoding"].includes(key.toLowerCase())) {
+        res.setHeader(key, proxyRes.headers[key]!);
+      }
+    });
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on("error", (err) => {
+    console.error(`[Firebase Auth Proxy Error] Failed to proxy to ${targetUrl}: `, err);
+    res.status(500).send("Auth proxy error");
+  });
+
+  req.pipe(proxyReq);
 });
 
 // Configure Vite middleware or production asset hosting

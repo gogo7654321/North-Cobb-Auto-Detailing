@@ -23,7 +23,7 @@ import BookingForm from "./components/BookingForm";
 import AdminPortal from "./components/AdminPortal";
 
 export default function App() {
-  const [selectedTab, setSelectedTab] = useState<"home" | "services" | "book" | "owner">("home");
+  const [selectedTab, setSelectedTab] = useState<"home" | "services" | "gallery" | "book" | "owner">("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passedService, setPassedService] = useState<string>("");
 
@@ -35,6 +35,8 @@ export default function App() {
         setSelectedTab("owner");
       } else if (hash === "#services") {
         setSelectedTab("services");
+      } else if (hash === "#gallery") {
+        setSelectedTab("gallery");
       } else if (hash === "#book") {
         setSelectedTab("book");
       } else {
@@ -131,6 +133,17 @@ export default function App() {
               Our Services
             </button>
             <button
+              id="nav_link_gallery"
+              onClick={() => { setSelectedTab("gallery"); window.location.hash = "#gallery"; }}
+              className={`text-xs font-bold uppercase tracking-widest px-3 py-2 cursor-pointer transition-colors relative ${
+                selectedTab === "gallery" 
+                  ? "text-[#b45309] border-b-2 border-[#b45309]" 
+                  : "text-zinc-650 hover:text-zinc-900"
+              }`}
+            >
+              Photo Gallery
+            </button>
+            <button
               id="nav_link_book"
               onClick={() => { setSelectedTab("book"); setPassedService(""); window.location.hash = "#book"; }}
               className={`text-xs font-bold uppercase tracking-widest px-3.5 py-2 cursor-pointer transition-colors relative ${
@@ -188,6 +201,15 @@ export default function App() {
               }`}
             >
               Our Services
+            </button>
+            <button
+              id="mob_nav_link_gallery"
+              onClick={() => { setSelectedTab("gallery"); setMobileMenuOpen(false); window.location.hash = "#gallery"; }}
+              className={`w-full text-left font-bold text-xs uppercase tracking-wider block py-2 px-3 rounded ${
+                selectedTab === "gallery" ? "bg-amber-50 text-amber-900 font-extrabold" : "text-zinc-600"
+              }`}
+            >
+              Photo Gallery
             </button>
             <button
               id="mob_nav_link_book"
@@ -283,7 +305,7 @@ export default function App() {
                     style={{ borderRadius: "18px 2px 18px 2px" }}
                   >
                     <img 
-                      src="/impala close up cinematic front.jpeg" 
+                      src="/IMG_0659.jpeg" 
                       alt="Arthur and Carson's handiwork" 
                       className="w-full h-auto object-cover max-h-[380px] hover:scale-105 transition-transform duration-500"
                       referrerPolicy="no-referrer"
@@ -292,7 +314,7 @@ export default function App() {
                   
                   <div className="p-4 text-center mt-1">
                     <span className="text-[10px] font-mono uppercase tracking-widest text-[#b45309] font-black block">Featured Restorative Work</span>
-                    <p className="text-xs text-[#5c544a] italic mt-1 font-serif">Mirror reflection hand-polish completed on a client's sedan.</p>
+                    <p className="text-xs text-[#5c544a] italic mt-1 font-serif">Ultra-premium show-car shine hand-crafted right in your driveway.</p>
                   </div>
                 </div>
               </div>
@@ -338,7 +360,10 @@ export default function App() {
 
             {/* REAL PORTFOLIO WORK SHOWCASE GALLERY */}
             <section className="py-6 border-b border-[#e6dccf]">
-              <WorkGallery />
+              <WorkGallery 
+                isFullPage={false} 
+                onNavigateToGallery={() => { setSelectedTab("gallery"); window.location.hash = "#gallery"; }}
+              />
             </section>
 
             {/* HIGH-CONVERSION TESTIMONIALS SECTION (Vintage Journal Style Columns) */}
@@ -436,6 +461,16 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB 3: PHOTOS GALLERY */}
+        {selectedTab === "gallery" && (
+          <div className="space-y-10 animate-in fade-in duration-300">
+            <WorkGallery 
+              isFullPage={true} 
+              onNavigateToBooking={scrollToBookingAndSelect}
+            />
+          </div>
+        )}
+
         {/* TAB 3: RESERVATION BOOKINGS */}
         {selectedTab === "book" && (
           <div id="booking_section_view" className="space-y-10 animate-in fade-in duration-300">
@@ -511,6 +546,8 @@ export default function App() {
               <button onClick={() => { setSelectedTab("home"); window.location.hash = ""; }} className="hover:text-amber-800 transition-colors cursor-pointer">Overview</button>
               <span>•</span>
               <button onClick={() => { setSelectedTab("services"); window.location.hash = "#services"; }} className="hover:text-amber-800 transition-colors cursor-pointer">Our Services</button>
+              <span>•</span>
+              <button onClick={() => { setSelectedTab("gallery"); window.location.hash = "#gallery"; }} className="hover:text-amber-800 transition-colors cursor-pointer">Photo Gallery</button>
               <span>•</span>
               <button onClick={() => { setSelectedTab("book"); window.location.hash = "#book"; }} className="hover:text-amber-800 transition-colors cursor-pointer">Request Detail</button>
               <span>•</span>

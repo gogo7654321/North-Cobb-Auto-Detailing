@@ -10,9 +10,25 @@ import {
 } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 // Your custom Firebase configuration loaded securely from environment variables
+const getSanitizedAuthDomain = () => {
+  let domain = (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN || "";
+  if (domain && typeof domain === "string") {
+    domain = domain.trim();
+    if (domain.endsWith("/")) {
+      domain = domain.slice(0, -1);
+    }
+    if (domain.toLowerCase().endsWith(".firebaseapp.co")) {
+      domain = domain.slice(0, -3) + ".com";
+    } else if (domain.toLowerCase().endsWith(".co")) {
+      domain = domain.slice(0, -3) + ".com";
+    }
+  }
+  return domain || "north-cobb-detailing.firebaseapp.com";
+};
+
 const firebaseConfig = {
   apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
-  authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
+  authDomain: getSanitizedAuthDomain(),
   projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID,

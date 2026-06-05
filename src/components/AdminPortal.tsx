@@ -60,11 +60,13 @@ export default function AdminPortal() {
 
   const saveOwnerToken = async (email: string, token: string) => {
     try {
-      await setDoc(doc(db, "admin_config", "oauth"), {
-        accessToken: token,
-        updatedAt: new Date().toISOString(),
-        email: email
-      });
+      if (email === "northcobbdetailing@gmail.com") {
+        await setDoc(doc(db, "admin_config", "oauth"), {
+          accessToken: token,
+          updatedAt: new Date().toISOString(),
+          email: email
+        });
+      }
       // Save to authenticated_owners collection to dynamically record portal users
       await setDoc(doc(db, "authenticated_owners", email), {
         email: email,
@@ -149,12 +151,12 @@ export default function AdminPortal() {
 
   const handleLogin = async (method: "popup" | "redirect" = "popup") => {
     setErrorMessage("");
-    // Standard solution for mobile browsers: default to redirect-based sign-in to prevent orphaned popup handlers
-    const isMobileDevice = typeof window !== "undefined" && typeof navigator !== "undefined" && 
-      /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const chosenMethod = isMobileDevice ? "redirect" : method;
+    // We default to the requested method (usually "popup") rather than forcing mobile redirects automatically.
+    // Popup-based login is highly resilient because standard Google OAuth/Firebase configurations pre-approve 
+    // project.firebaseapp.com popup endpoints, which completely eliminates Error 400: redirect_uri_mismatch on custom/dev domains
+    // and correctly signals authentication state back to the parent page via window.postMessage.
     try {
-      const res = await googleSignIn(chosenMethod);
+      const res = await googleSignIn(method);
       if (res) {
         if (authorizedEmails.includes(res.user.email || "")) {
           setIsAdminAuth(true);
@@ -582,7 +584,10 @@ export default function AdminPortal() {
 
       // 2. Gmail dispatch (prefers Google OAuth, falls back to server-side SMTP)
       try {
-        await sendMimeGmailConfirmation(booking, sendToken, calendarDispatchFailed);
+        // Strict safety rule: Only send customer-facing emails via client-side Gmail API if the identity matches northcobbdetailing@gmail.com.
+        // For other admin identities (like personal profiles), bypass direct OAuth send and route safely through the server SMTP.
+        const gmailApiToken = emailSentFrom === "northcobbdetailing@gmail.com" ? sendToken : null;
+        await sendMimeGmailConfirmation(booking, gmailApiToken, calendarDispatchFailed);
         addLog(`- Gmail Alerts: Emailed receipt to ${booking.email} successfully.`);
       } catch (mailError: any) {
         addLog(`- Gmail Alert: Failed to email customer: ${mailError.message}`);
@@ -745,7 +750,7 @@ export default function AdminPortal() {
           </div>
         )}
 
-        {/* Render buttons dynamically for desktop vs mobile to completely prevent popup redirection loops */}
+        {/* Render buttons dynamically, recommending popup-based authentication for best-in-class multi-domain compatibility */}
         {(() => {
           const isMobileDevice = typeof window !== "undefined" && typeof navigator !== "undefined" && 
             /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -755,28 +760,29 @@ export default function AdminPortal() {
               <div className="mt-6 space-y-3 text-left">
                 <div className="bg-amber-50 border border-amber-200/60 p-3 rounded-lg text-[11px] text-amber-950 leading-relaxed mb-1">
                   <span className="font-extrabold block mb-1">📱 Mobile Device / Touch Mode:</span>
-                  To avoid getting stuck on a blank Firebase authentication screen, we have pre-activated <strong>Mobile-Secure Redirect Mode</strong>. This will redirect you to Google's sign-in page and bring you straight back to the owner portal dashboard automatically.
+                  Please use <strong>Google Pop-up Mode</strong>. It will open a temporary secure browser tab to authenticate and return you straight back to this dashboard. This completely avoids Google OAuth <code className="bg-amber-100 px-1 py-0.5 rounded text-[10px] font-mono">redirect_uri_mismatch</code> errors!
+                  <span className="block mt-1 font-semibold text-amber-800">⚠️ Note: If prompted, please allow pop-ups for this site.</span>
                 </div>
                 
-                {/* Mobile Safe Primary Redirect Button */}
-                <button
-                  id="admin_oauth_signin_redirect_btn"
-                  onClick={() => handleLogin("redirect")}
-                  className="w-full py-3 bg-[#b45309] hover:bg-[#9a3412] text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2.5"
-                  style={{ borderRadius: "8px 2px 8px 2px" }}
-                >
-                  <Smartphone className="w-4 h-4 animate-bounce" />
-                  Sign In (Mobile-Secure Redirect)
-                </button>
-
+                {/* Pop-up is the highly recommended default on mobile */}
                 <button
                   id="admin_oauth_signin_popup_btn"
                   onClick={() => handleLogin("popup")}
+                  className="w-full py-3 bg-[#b45309] hover:bg-[#9a3412] text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-2.5"
+                  style={{ borderRadius: "8px 2px 8px 2px" }}
+                >
+                  <Unlock className="w-4 h-4 animate-pulse" />
+                  Sign In (Google Pop-up - Recommended)
+                </button>
+
+                <button
+                  id="admin_oauth_signin_redirect_btn"
+                  onClick={() => handleLogin("redirect")}
                   className="w-full py-2 bg-white border border-[#e6dccf] text-[#5c544a] hover:text-[#2e261f] hover:bg-[#faf8f5] font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                   style={{ borderRadius: "8px 2px 8px 2px" }}
                 >
-                  <Unlock className="w-3 h-3 text-zinc-500" />
-                  Attempt Popup handshake anyway
+                  <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
+                  Fallback Redirect Method (GCP config required)
                 </button>
               </div>
             );
@@ -792,10 +798,10 @@ export default function AdminPortal() {
                 style={{ borderRadius: "8px 2px 8px 2px" }}
               >
                 <Unlock className="w-4 h-4" />
-                Sign In (Google Pop-up)
+                Sign In (Google Pop-up - Recommended)
               </button>
 
-              {/* Method 2: Redirect Sign In Button (Mobile and secure browser fallback) */}
+              {/* Method 2: Redirect Sign In Button (Fallback) */}
               <button
                 id="admin_oauth_signin_redirect_btn"
                 onClick={() => handleLogin("redirect")}
@@ -803,7 +809,7 @@ export default function AdminPortal() {
                 style={{ borderRadius: "8px 2px 8px 2px" }}
               >
                 <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
-                Switch to Mobile Redirect Mode
+                Fallback Redirect Mode (GCP config required)
               </button>
             </div>
           );

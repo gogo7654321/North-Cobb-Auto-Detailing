@@ -306,6 +306,11 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                   <span className="w-2.5 h-2.5 flex items-center justify-center bg-[#00D632] text-white rounded-[3px] font-sans font-black text-[7px] leading-none">$</span>
                   <span>Cash App</span>
                 </div>
+                {/* Venmo */}
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#008CFF]/15 text-[#007cd6] rounded-md border border-[#008CFF]/20 text-[10px] font-extrabold uppercase font-sans">
+                  <span className="w-2.5 h-2.5 flex items-center justify-center bg-[#008CFF] text-white rounded-[3px] font-sans font-black text-[7px] leading-none">V</span>
+                  <span>Venmo</span>
+                </div>
               </div>
               <p className="text-[10.5px] text-zinc-500 mt-2 px-1 leading-normal">
                 No deposit or upfront prepayments required. Pay Arthur & Carson directly upon completion!
@@ -636,6 +641,11 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-[#00D632]/10 text-[#00b32a] rounded-lg border border-[#00D632]/20 text-[10.5px] font-extrabold font-sans">
                     <span className="w-3.5 h-3.5 flex items-center justify-center bg-[#00D632] text-white rounded-[4px] font-sans font-black text-[9px] leading-none">$</span>
                     <span>CASH APP</span>
+                  </div>
+                  {/* Venmo */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-[#008CFF]/10 text-[#007cd6] rounded-lg border border-[#008CFF]/25 text-[10.5px] font-extrabold font-sans">
+                    <span className="w-3.5 h-3.5 flex items-center justify-center bg-[#008CFF] text-white rounded-[4px] font-sans font-black text-[9px] leading-none">V</span>
+                    <span>VENMO</span>
                   </div>
                 </div>
               </div>
