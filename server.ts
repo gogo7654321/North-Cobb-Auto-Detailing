@@ -10,6 +10,26 @@ import https from "https";
 // Load environment variables
 dotenv.config();
 
+import fs from "fs";
+// Auto-generate firebase-applet-config.json from environment variables for deployment tools
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  const authDomainCandidate = process.env.VITE_FIREBASE_AUTH_DOMAIN || `${process.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`;
+  const configData = {
+    apiKey: process.env.VITE_FIREBASE_API_KEY || "",
+    authDomain: authDomainCandidate,
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID || "north-cobb-detailing",
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || `${process.env.VITE_FIREBASE_PROJECT_ID}.appspot.com`,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+    appId: process.env.VITE_FIREBASE_APP_ID || "",
+    firestoreDatabaseId: "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038"
+  };
+  fs.writeFileSync(configPath, JSON.stringify(configData, null, 2));
+  console.log("[CONFIG] firebase-applet-config.json auto-written successfully.");
+} catch (e) {
+  console.error("Failed to write firebase-applet-config.json: ", e);
+}
+
 // Initialize Firebase Admin safely
 if (dbAdmin.apps.length === 0) {
   dbAdmin.initializeApp({
@@ -539,6 +559,199 @@ app.all("/__/auth/*", (req, res) => {
   });
 
   req.pipe(proxyReq);
+});
+
+// --- SERVER-SIDE DB PROXY ENDPOINTS (Solving Firestore permission errors) ---
+
+// Helper to assert owner email
+async function verifyOwnerEmailHeader(req: express.Request): Promise<boolean> {
+  const email = req.headers["x-owner-email"];
+  if (!email || typeof email !== "string") return false;
+  
+  const authorizedEmails = ["npatel012010@gmail.com", "northcobbdetailing@gmail.com"];
+  if (authorizedEmails.includes(email)) return true;
+
+  try {
+    const docSnap = await firestoreDb.collection("authenticated_owners").doc(email).get();
+    if (docSnap.exists) {
+      return true;
+    }
+  } catch (err) {
+    console.error("Failed to verify owner email from DB: ", err);
+  }
+  return false;
+}
+
+// 1. Save Owner OAuth Token
+app.post("/api/save-owner-token", async (req, res) => {
+  const { email, token } = req.body;
+  if (!email || !token) {
+    return res.status(400).json({ error: "Missing email or token." });
+  }
+
+  const authorizedEmails = ["npatel012010@gmail.com", "northcobbdetailing@gmail.com"];
+  if (!authorizedEmails.includes(email)) {
+    return res.status(403).json({ error: "Unauthorized email." });
+  }
+
+  try {
+    if (email === "northcobbdetailing@gmail.com") {
+      await firestoreDb.collection("admin_config").doc("oauth").set({
+        accessToken: token,
+        updatedAt: new Date().toISOString(),
+        email: email
+      });
+      console.log(`[Server DB Proxy] Stored OAuth token for northcobbdetailing@gmail.com`);
+    }
+
+    await firestoreDb.collection("authenticated_owners").doc(email).set({
+      email: email,
+      accessToken: token,
+      updatedAt: new Date().toISOString(),
+      hasToken: true
+    });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Save Owner Token failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to save owner token." });
+  }
+});
+
+// 2. Gallery Images: Read
+app.get("/api/gallery-images", async (req, res) => {
+  try {
+    const snapshot = await firestoreDb.collection("gallery_images")
+      .orderBy("createdAt", "desc")
+      .get();
+    
+    const items: any[] = [];
+    snapshot.forEach((docSnap) => {
+      items.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return res.json(items);
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Get Gallery Images failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch gallery images." });
+  }
+});
+
+// 3. Gallery Images: Write
+app.post("/api/gallery-images", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const { url, name, caption, storagePath } = req.body;
+  if (!url || !name) {
+    return res.status(400).json({ error: "Missing required fields (url, name)." });
+  }
+
+  try {
+    const r = await firestoreDb.collection("gallery_images").add({
+      url,
+      name,
+      caption: caption || "Migrated Driveway Portfolio Asset",
+      storagePath: storagePath || "",
+      createdAt: new Date().toISOString()
+    });
+    return res.json({ success: true, id: r.id });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Add Gallery Image failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to add gallery image." });
+  }
+});
+
+// 4. Gallery Images: Delete
+app.delete("/api/gallery-images/:id", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const { id } = req.params;
+  try {
+    await firestoreDb.collection("gallery_images").doc(id).delete();
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Delete Gallery Image failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to delete gallery image." });
+  }
+});
+
+// 5. Bookings: Read
+app.get("/api/bookings", async (req, res) => {
+  try {
+    const snapshot = await firestoreDb.collection("bookings")
+      .orderBy("dateTime", "asc")
+      .get();
+    
+    const items: any[] = [];
+    snapshot.forEach((docSnap) => {
+      items.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return res.json(items);
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Get Bookings failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch bookings." });
+  }
+});
+
+// 6. Bookings: Create/Set
+app.post("/api/bookings", async (req, res) => {
+  const { id, data } = req.body;
+  if (!data) {
+    return res.status(400).json({ error: "Missing booking data." });
+  }
+
+  try {
+    if (id) {
+      await firestoreDb.collection("bookings").doc(id).set(data);
+      return res.json({ success: true, id });
+    } else {
+      const r = await firestoreDb.collection("bookings").add(data);
+      return res.json({ success: true, id: r.id });
+    }
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Create Booking failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to compile booking." });
+  }
+});
+
+// 7. Bookings: Update (Patch)
+app.patch("/api/bookings/:id", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const { id } = req.params;
+  const updates = req.body;
+  if (!updates) {
+    return res.status(400).json({ error: "Missing booking updates." });
+  }
+
+  try {
+    await firestoreDb.collection("bookings").doc(id).update(updates);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Patch Booking failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to update booking." });
+  }
+});
+
+// 8. Bookings: Delete
+app.delete("/api/bookings/:id", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const { id } = req.params;
+  try {
+    await firestoreDb.collection("bookings").doc(id).delete();
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Delete Booking failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to delete booking." });
+  }
 });
 
 // Configure Vite middleware or production asset hosting

@@ -198,9 +198,24 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
         console.error("Cloud function automated notification trigger failed:", cfErr);
       }
 
-      // 2. Save directly to secure firestore with explicit timeout protection
+      // 2. Save directly to secure firestore via server proxy API with explicit timeout protection
       await promiseWithTimeout(
-        setDoc(doc(db, "bookings", bookingId), bookingPayload),
+        (async () => {
+          const res = await fetch("/api/bookings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              id: bookingId,
+              data: bookingPayload
+            })
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || "Failed to create details reservation.");
+          }
+        })(),
         5000,
         "FIRESTORE_WRITE_TIMEOUT"
       );
@@ -286,7 +301,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
             </div>
             
             <div className="pt-3 max-w-sm mx-auto text-center">
-              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest font-mono">Accepted Payment Methods (After Completion)</span>
+              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest font-sans">Accepted Payment Methods (After Completion)</span>
               <div className="flex justify-center gap-2 mt-2">
                 {/* Cash */}
                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 text-green-700 rounded-md border border-green-200/40 text-[10px] font-extrabold uppercase font-sans">
@@ -383,7 +398,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     transition={{ duration: 0.15 }}
                     className="overflow-hidden"
                   >
-                    <p className={`text-[10px] font-mono font-bold flex items-center gap-1 mt-1 uppercase ${
+                    <p className={`text-[10px] font-sans font-bold flex items-center gap-1 mt-1 uppercase ${
                       isNameValid ? "text-emerald-700" : "text-rose-500"
                     }`}>
                       {isNameValid ? "✓ Name looks ideal" : "⚠ Name must be at least 2 characters"}
@@ -424,7 +439,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                       transition={{ duration: 0.15 }}
                       className="overflow-hidden"
                     >
-                      <p className={`text-[10px] font-mono font-bold flex items-center gap-1 mt-1 uppercase ${
+                      <p className={`text-[10px] font-sans font-bold flex items-center gap-1 mt-1 uppercase ${
                         isPhoneValid ? "text-emerald-700" : "text-rose-500"
                       }`}>
                         {isPhoneValid ? "✓ Phone number is valid" : "⚠ Enter at least 10 digits"}
@@ -463,7 +478,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                       transition={{ duration: 0.15 }}
                       className="overflow-hidden"
                     >
-                      <p className={`text-[10px] font-mono font-bold flex items-center gap-1 mt-1 uppercase ${
+                      <p className={`text-[10px] font-sans font-bold flex items-center gap-1 mt-1 uppercase ${
                         isEmailValid ? "text-emerald-700" : "text-rose-500"
                       }`}>
                         {isEmailValid ? "✓ Email syntax is valid" : "⚠ Enter a correct email format"}
@@ -492,7 +507,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     <option value="Interior Detail">Interior</option>
                     <option value="Full Detail">Full Detail</option>
                   </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#b45309] text-[10px] font-mono font-bold select-none uppercase tracking-wider">
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#b45309] text-[10px] font-sans font-bold select-none uppercase tracking-wider">
                     BASE
                   </div>
                 </div>
@@ -514,7 +529,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     <option value="Crossover / Small SUV">Crossover / Small SUV</option>
                     <option value="Large SUV / Truck / Minivan">Large SUV / Truck / Minivan</option>
                   </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px] font-mono font-bold select-none uppercase tracking-wider">
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px] font-sans font-bold select-none uppercase tracking-wider">
                     SIZE
                   </div>
                 </div>
@@ -550,7 +565,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                       transition={{ duration: 0.15 }}
                       className="overflow-hidden"
                     >
-                      <p className={`text-[10px] font-mono font-bold flex items-center gap-1 mt-1 uppercase ${
+                      <p className={`text-[10px] font-sans font-bold flex items-center gap-1 mt-1 uppercase ${
                         isDateValid ? "text-emerald-700" : "text-rose-500"
                       }`}>
                         {isDateValid 

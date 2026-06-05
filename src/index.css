@@ -4,7 +4,7 @@
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Outfit", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, monospace;
+  --font-mono: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Fix iOS Safari date input width overflow & alignment */

@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db, storage } from "../lib/firebase";
+import { ref, listAll, getDownloadURL } from "firebase/storage";
 import { 
   X, 
   ChevronLeft, 
@@ -13,6 +16,14 @@ interface WorkGalleryProps {
   onNavigateToGallery?: () => void;
 }
 
+interface PhotoItem {
+  id: string;
+  url: string;
+  name: string;
+  caption?: string;
+  isDynamic?: boolean;
+}
+
 export default function WorkGallery({ 
   isFullPage = false, 
   onNavigateToBooking, 
@@ -20,6 +31,7 @@ export default function WorkGallery({
 }: WorkGalleryProps) {
   const [activeLightboxIndex, setActiveLightboxIndex] = useState<number | null>(null);
   const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
+  const [dynamicPhotos, setDynamicPhotos] = useState<any[]>([]);
 
   // List of all 33 premium quality real driveway work photos. (Duplicate /IMG_7813-1.jpeg removed)
   const photos = [
@@ -48,7 +60,7 @@ export default function WorkGallery({
     "/IMG_7829.jpeg",
     "/IMG_7830.jpeg",
     "/IMG_7838.jpeg",
-
+ 
     // --- Clean Detail Work Proof Series ---
     "/IMG_0648.jpeg",
     "/IMG_0985.jpeg",
@@ -64,10 +76,6 @@ export default function WorkGallery({
   ];
 
   // Favorite curated photos for the Home Page overview section
-  // - Pic #3: /impala close up cinematic front.jpeg
-  // - Pic #2: /IMG_0663.jpeg
-  // - Pic #12: /IMG_7817.jpeg
-  // - Pic #13: /IMG_7819.jpeg
   const homePhotos = [
     "/impala close up cinematic front.jpeg",
     "/IMG_0663.jpeg",
@@ -75,10 +83,124 @@ export default function WorkGallery({
     "/IMG_7819.jpeg"
   ];
 
-  const displayPhotos = isFullPage ? photos : homePhotos;
+  const [storagePhotos, setStoragePhotos] = useState<{name: string, url: string}[]>([]);
 
-  // Keep track of failing photos but do NOT completely delete them from DOM list,
-  // so the user knows every file in their folder is accounted for in code!
+  // Scan Firebase Storage bucket under 'gallery' prefix on load
+  useEffect(() => {
+    const scanStorage = async () => {
+      try {
+        const storageRef = ref(storage, "gallery");
+        const res = await listAll(storageRef);
+        const files = await Promise.all(
+          res.items.map(async (item) => {
+            try {
+              const url = await getDownloadURL(item);
+              return { name: item.name, url };
+            } catch (e) {
+              return { name: item.name, url: "" };
+            }
+          })
+        );
+        setStoragePhotos(files.filter(f => f.url));
+      } catch (err) {
+        console.warn("Storage scanning on gallery skipped:", err);
+      }
+    };
+    scanStorage();
+  }, []);
+
+  // Fetch custom dynamic uploads via server API (bypassing Client rules restrictions)
+  useEffect(() => {
+    const fetchDynamicPhotos = async () => {
+      try {
+        const response = await fetch("/api/gallery-images");
+        if (response.ok) {
+          const data = await response.json();
+          setDynamicPhotos(data);
+        } else {
+          console.error("API error loading dynamic photos:", response.statusText);
+        }
+      } catch (error) {
+        console.error("Failed to load customer dynamic photos via API: ", error);
+      }
+    };
+
+    fetchDynamicPhotos();
+    const interval = setInterval(fetchDynamicPhotos, 12000); // Check for edits every 12s
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatStorageName = (fileName: string) => {
+    let clean = fileName;
+    if (clean.startsWith("migrated_")) {
+      clean = clean.replace(/^migrated_/, "");
+    }
+    clean = clean.replace(/^\d+_+/, "");
+    clean = clean.replace(/\.[^/.]+$/, "");
+    clean = clean.replace(/[_-]/g, " ");
+    return clean.replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  // Map local static photos to consistent PhotoItem objects
+  const staticPhotoItems: PhotoItem[] = photos.map((src, i) => ({
+    id: `static-${i}`,
+    url: src,
+    name: src
+      .replace(/^\//, "")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, c => c.toUpperCase()),
+    caption: "Driveway work proof",
+    isDynamic: false
+  }));
+
+  const homePhotoItems: PhotoItem[] = homePhotos.map((src, i) => ({
+    id: `home-${i}`,
+    url: src,
+    name: src
+      .replace(/^\//, "")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, c => c.toUpperCase()),
+    caption: "Featured driveway detail",
+    isDynamic: false
+  }));
+
+  // Merge Firestore-registered photos and raw Storage files
+  const dynamicPhotoItems: PhotoItem[] = React.useMemo(() => {
+    const list: PhotoItem[] = dynamicPhotos.map(doc => ({
+      id: doc.id,
+      url: doc.url,
+      name: doc.name || "Custom Detail Photo",
+      caption: doc.caption || "Dynamic driveway work",
+      isDynamic: true
+    }));
+
+    storagePhotos.forEach((sFile) => {
+      const formattedName = formatStorageName(sFile.name);
+      const alreadyIncluded = list.some(p => 
+        p.url === sFile.url || p.name === formattedName
+      );
+
+      if (!alreadyIncluded) {
+        list.push({
+          id: `storage-${sFile.name}`,
+          url: sFile.url,
+          name: formattedName,
+          caption: "Dynamic driveway work",
+          isDynamic: true
+        });
+      }
+    });
+
+    return list;
+  }, [dynamicPhotos, storagePhotos]);
+
+  // Merge so dynamic uploads appear dynamically at the front of the queue
+  const displayPhotos = isFullPage 
+    ? [...dynamicPhotoItems, ...staticPhotoItems]
+    : [...dynamicPhotoItems, ...homePhotoItems].slice(0, 4);
+
   const handleOpenLightbox = (index: number) => {
     setActiveLightboxIndex(index);
   };
@@ -107,7 +229,7 @@ export default function WorkGallery({
     <section className="py-4 select-none" id="work_photo_wall">
       {/* HEADER SECTION */}
       <div className="text-center max-w-2xl mx-auto mb-8 px-4">
-        <span className="inline-flex items-center px-3 py-0.5 bg-amber-50 text-amber-850 border border-amber-200/50 rounded-full font-bold font-mono text-[10px] tracking-widest uppercase mb-2">
+        <span className="inline-flex items-center px-3 py-0.5 bg-amber-50 text-amber-850 border border-amber-200/50 rounded-full font-bold font-sans text-[10px] tracking-widest uppercase mb-2">
           {isFullPage ? "[ REAL CLIENT WORK PROOF ]" : "[ FEATURED DRIVEWAY WORK SHOWCASE ]"}
         </span>
         <h3 className="text-3xl sm:text-4xl font-serif font-black text-[#2e261f] tracking-tight">
@@ -125,17 +247,14 @@ export default function WorkGallery({
         ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 px-2 sm:px-4"
         : "grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto px-4"
       }>
-        {displayPhotos.map((src, index) => {
-          const isFailed = failedPhotos.includes(src);
-          const formattedName = src
-            .replace(/^\//, "")
-            .replace(/\.[^/.]+$/, "")
-            .replace(/_/g, " ")
-            .replace(/\b\w/g, c => c.toUpperCase());
+        {displayPhotos.map((item, index) => {
+          const isFailed = failedPhotos.includes(item.url);
+          const formattedName = item.name;
+          const src = item.url;
 
           return (
             <div
-              key={src}
+              key={item.id}
               id={`gallery_img_wrapper_${index}`}
               className="group relative bg-[#faf5f0] overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-300 border border-[#e6dccf] aspect-square flex flex-col justify-between"
               style={{ borderRadius: "12px 2px 12px 2px" }}
@@ -145,7 +264,7 @@ export default function WorkGallery({
                 // Elegant luxury placeholder card for large images in process of syncing
                 <div className="absolute inset-0 bg-gradient-to-br from-[#fdfbf7] via-[#faf5ef] to-[#f5ebd3] p-4 flex flex-col justify-between select-none">
                   <div className="flex justify-between items-start">
-                    <span className="text-[8px] font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase tracking-widest animate-pulse">
+                    <span className="text-[8px] font-sans font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase tracking-widest animate-pulse">
                       Syncing
                     </span>
                     <Sparkles className="w-3.5 h-3.5 text-amber-500/80 animate-pulse" />
@@ -155,19 +274,19 @@ export default function WorkGallery({
                     <p className="text-[10px] font-bold text-[#44382e] uppercase tracking-wider font-sans line-clamp-1">
                       {formattedName}
                     </p>
-                    <p className="text-[8px] text-zinc-500 font-mono mt-0.5 truncate">
-                      {src.substring(1)}
+                    <p className="text-[8px] text-zinc-500 font-sans mt-0.5 truncate">
+                      {src.substring(0, 30)}...
                     </p>
                   </div>
 
-                  <div className="text-[8px] font-mono text-zinc-400 text-center leading-tight">
+                  <div className="text-[8px] font-sans text-zinc-400 text-center leading-tight">
                     High-Res Photo Syncing...
                   </div>
                 </div>
               ) : (
                 <img
                   src={src}
-                  alt={formattedName}
+                  alt={`${formattedName} - North Cobb Detailing - Premium Mobile Car Detailing in Kennesaw & Acworth GA`}
                   className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
                   loading="lazy"
                   referrerPolicy="no-referrer"
@@ -186,7 +305,7 @@ export default function WorkGallery({
               </div>
 
               {/* Micro subtle photo counter index in bottom corner */}
-              <span className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 text-white font-mono text-[9px] font-bold rounded tracking-wider backdrop-blur-sm shadow select-none opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 text-white font-sans text-[9px] font-bold rounded tracking-wider backdrop-blur-sm shadow select-none opacity-0 group-hover:opacity-100 transition-opacity">
                 #{index + 1}
               </span>
             </div>
@@ -216,7 +335,7 @@ export default function WorkGallery({
         >
           {/* Lightbox Header Controller rail */}
           <div className="flex items-center justify-between text-white w-full max-w-7xl mx-auto py-2">
-            <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full">
+            <span className="text-xs font-sans font-bold text-amber-400 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full">
               Photo {activeLightboxIndex + 1} of {displayPhotos.length}
             </span>
 
@@ -242,38 +361,34 @@ export default function WorkGallery({
 
             {/* Active Rendered Photo Frame */}
             <div className="relative max-h-[75vh] md:max-h-[80vh] max-w-full overflow-hidden border border-white/10 p-1 bg-black/25 shadow-2xl rounded-2xl">
-              {failedPhotos.includes(displayPhotos[activeLightboxIndex]) ? (
+              {failedPhotos.includes(displayPhotos[activeLightboxIndex].url) ? (
                 // Beautiful detail feedback card inside modal for high resolution items
                 <div className="w-[85vw] max-w-lg aspect-square md:aspect-video bg-[#18181b]/95 border border-amber-500/20 rounded-xl p-6 md:p-8 flex flex-col justify-between text-neutral-200">
                   <div className="flex justify-between items-center pb-4 border-b border-white/5">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                      <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest">Workspace Index Sync</span>
+                      <span className="text-[10px] font-sans font-bold text-amber-400 uppercase tracking-widest">Workspace Index Sync</span>
                     </div>
                     <Sparkles className="w-4 h-4 text-amber-400" />
                   </div>
 
                   <div className="text-center my-6">
                     <h4 className="text-base md:text-lg font-bold font-serif text-white tracking-tight mb-1">
-                      {displayPhotos[activeLightboxIndex]
-                        .replace(/^\//, "")
-                        .replace(/\.[^/.]+$/, "")
-                        .replace(/_/g, " ")
-                        .replace(/\b\w/g, c => c.toUpperCase())}
+                      {displayPhotos[activeLightboxIndex].name}
                     </h4>
                     <p className="text-[11px] text-zinc-400 max-w-xs mx-auto leading-relaxed">
-                      This high-fidelity photo <span className="font-mono text-white text-[10px]">({displayPhotos[activeLightboxIndex].substring(1)})</span> is linked but is currently syncing from your computer.
+                      This photo is currently syncing from cloud server.
                     </p>
                   </div>
 
-                  <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 text-center text-[10px] text-amber-200/80 leading-relaxed font-mono">
-                    File Size &gt; 10MB • Asset sync stabilizes automatically as offline uploads save to container disk.
+                  <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 text-center text-[10px] text-amber-200/80 leading-relaxed font-sans">
+                    High resolution media loading dynamically.
                   </div>
                 </div>
               ) : (
                 <img
-                  src={displayPhotos[activeLightboxIndex]}
-                  alt={`Detail proof ${activeLightboxIndex + 1}`}
+                  src={displayPhotos[activeLightboxIndex].url}
+                  alt={`${displayPhotos[activeLightboxIndex].name} - North Cobb Detailing`}
                   className="max-h-[73vh] md:max-h-[78vh] w-auto object-contain mx-auto rounded-xl select-none"
                   referrerPolicy="no-referrer"
                 />
@@ -292,7 +407,7 @@ export default function WorkGallery({
 
           {/* Lightbox Footer Instruction rail */}
           <div className="w-full max-w-4xl mx-auto text-center text-zinc-400 text-xs md:text-sm py-3 border-t border-white/5">
-            <div className="flex justify-center gap-1.5 text-[10px] font-mono text-zinc-500 font-bold uppercase tracking-widest">
+            <div className="flex justify-center gap-1.5 text-[10px] font-sans text-zinc-500 font-bold uppercase tracking-widest">
               <span>USE ARROW BUTTONS TO NAVIGATE • TOUCH OUTSIDE TO RETURN</span>
             </div>
           </div>

@@ -77,5 +77,32 @@ service cloud.firestore {
     match /admin_config/{docId} {
       allow read, write: if isVerifiedOwner() && isValidId(docId);
     }
+
+    // --- Helper for email ID validation ---
+    function isValidEmailId(id) {
+      return id is string && id.size() <= 256;
+    }
+
+    // --- Helper for gallery image validation ---
+    function isValidGalleryImage(data) {
+      return data.keys().hasAll(['url', 'name', 'createdAt']) &&
+             data.size() >= 3 && data.size() <= 5 &&
+             data.url is string && data.url.size() > 0 && data.url.size() <= 2000000 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 256 &&
+             data.createdAt is string && data.createdAt.size() <= 64 &&
+             (!('caption' in data) || (data.caption is string && data.caption.size() <= 1024)) &&
+             (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() <= 1024));
+    }
+
+    // --- Gallery Images Rules ---
+    match /gallery_images/{imageId} {
+      allow read: if true; // Public access
+      allow write: if isVerifiedOwner() && isValidId(imageId) && (request.method == 'delete' || isValidGalleryImage(incoming()));
+    }
+
+    // --- Authenticated Owners Rules ---
+    match /authenticated_owners/{email} {
+      allow read, write: if isVerifiedOwner() && isValidEmailId(email);
+    }
   }
 }

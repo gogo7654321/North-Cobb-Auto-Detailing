@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner() {
+      return isSignedIn() &&
+             (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
+    }
+
+    // --- Gallery Portfolio Rules ---
+    match /gallery/{allPaths=**} {
+      // Anyone can view the driveways and premium photos in the portfolio
+      allow read: if true;
+      
+      // Only you (as the verified logged-in owner) can add, update, or remove portfolio files
+      allow write: if isVerifiedOwner();
+    }
+  }
+}

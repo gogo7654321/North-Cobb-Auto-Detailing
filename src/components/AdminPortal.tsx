@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   collection, 
   query, 
@@ -8,7 +8,8 @@ import {
   getDoc,
   setDoc,
   updateDoc, 
-  deleteDoc 
+  deleteDoc,
+  addDoc
 } from "firebase/firestore";
 import { 
   db, 
@@ -16,8 +17,16 @@ import {
   googleSignIn, 
   getAccessToken, 
   googleSignOut,
-  initAuth 
+  initAuth,
+  storage
 } from "../lib/firebase";
+import { 
+  ref, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  deleteObject,
+  listAll
+} from "firebase/storage";
 import { Booking, BookingStatusType } from "../types";
 import { 
   Lock, 
@@ -34,7 +43,11 @@ import {
   AlertTriangle,
   PlayCircle,
   TrendingUp,
-  UserCheck
+  UserCheck,
+  UploadCloud,
+  Link,
+  Image,
+  Sparkles
 } from "lucide-react";
 
 export default function AdminPortal() {
@@ -47,8 +60,641 @@ export default function AdminPortal() {
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isInIframe, setIsInIframe] = useState(false);
-  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'gallery'>('active');
   const [showAuthWarning, setShowAuthWarning] = useState(false);
+
+  // Gallery Management States
+  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [caption, setCaption] = useState("");
+  const [imageInputMethod, setImageInputMethod] = useState<'file' | 'url'>('file');
+  const [imageUrl, setImageUrl] = useState("");
+  const [galleryError, setGalleryError] = useState("");
+  const [gallerySuccess, setGallerySuccess] = useState("");
+  const [multiUploadStatus, setMultiUploadStatus] = useState<{
+    total: number;
+    current: number;
+    currentName: string;
+    stage: 'converting' | 'uploading' | 'saving' | 'idle';
+  } | null>(null);
+
+  // Firebase Storage checking states for the portfolio migration hub
+  const [existingStorageFiles, setExistingStorageFiles] = useState<{name: string, url: string}[]>([]);
+  const [loadingStorage, setLoadingStorage] = useState(false);
+
+  const formatStorageName = (fileName: string) => {
+    let clean = fileName;
+    if (clean.startsWith("migrated_")) {
+      clean = clean.replace(/^migrated_/, "");
+    }
+    // Remove leading epoch timestamp (digits followed by underscore, e.g. 1717589201524_)
+    clean = clean.replace(/^\d+_+/, "");
+    // Remove file extension
+    clean = clean.replace(/\.[^/.]+$/, "");
+    // Replace underscores or dashes with spaces
+    clean = clean.replace(/[_-]/g, " ");
+    // Titlecase
+    return clean.replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  // Merge Firestore-registered photos and raw Storage files
+  const mergedDynamicPhotos = React.useMemo(() => {
+    const list = [...galleryPhotos];
+    
+    existingStorageFiles.forEach((sFile) => {
+      const cleanName = sFile.name;
+      const formattedName = formatStorageName(cleanName);
+      
+      const alreadyRepresented = list.some(p => 
+        p.storagePath === `gallery/${cleanName}` || 
+        p.url === sFile.url ||
+        p.name === formattedName
+      );
+      
+      if (!alreadyRepresented && sFile.url) {
+        list.push({
+          id: `storage-${cleanName}`,
+          url: sFile.url,
+          name: formattedName,
+          caption: "Dynamic Storage Asset",
+          storagePath: `gallery/${cleanName}`,
+          createdAt: new Date().toISOString()
+        });
+      }
+    });
+
+    return list;
+  }, [galleryPhotos, existingStorageFiles]);
+
+  const checkStorageFiles = async () => {
+    if (!storage) return;
+    setLoadingStorage(true);
+    try {
+      console.log("Scanning Firebase Storage bucket under 'gallery' prefix...");
+      const storageRef = ref(storage, "gallery");
+      const res = await listAll(storageRef);
+      const files = await Promise.all(
+        res.items.map(async (item) => {
+          try {
+            const url = await getDownloadURL(item);
+            return { name: item.name, url };
+          } catch (e) {
+            return { name: item.name, url: "" };
+          }
+        })
+      );
+      setExistingStorageFiles(files);
+      console.log("Successfully retrieved", files.length, "files from storage container.");
+    } catch (err) {
+      console.error("Failed to list files in storage bucket: ", err);
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const fetchGalleryPhotos = async () => {
+    try {
+      const response = await fetch("/api/gallery-images");
+      if (response.ok) {
+        const data = await response.json();
+        setGalleryPhotos(data);
+      }
+    } catch (err) {
+      console.error("Failed to load dashboard dynamic photos via API: ", err);
+    }
+  };
+
+  // Load dynamic gallery photos
+  useEffect(() => {
+    if (!isAdminAuth) return;
+    
+    fetchGalleryPhotos();
+    const interval = setInterval(fetchGalleryPhotos, 10000);
+
+    // Run initial scans for already uploaded items
+    checkStorageFiles();
+
+    return () => clearInterval(interval);
+  }, [isAdminAuth]);
+
+  const handleAddMultipleFiles = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) {
+      setGalleryError("Please select a valid image file first.");
+      return;
+    }
+    setUploading(true);
+    setGalleryError("");
+    setGallerySuccess("");
+
+    const fileArray = Array.from(files);
+    let successCount = 0;
+    let failedCount = 0;
+
+    // Dynamically load heic2any with generic typing to bypass static linter checks
+    let heic2anyLib: any = null;
+    try {
+      const module = await import("heic2any");
+      heic2anyLib = module.default || module;
+    } catch (e) {
+      console.warn("Failed to load browser HEIC conversion library: ", e);
+    }
+
+    for (let i = 0; i < fileArray.length; i++) {
+      let file = fileArray[i];
+      const displayName = file.name;
+
+      setMultiUploadStatus({
+        total: fileArray.length,
+        current: i + 1,
+        currentName: displayName,
+        stage: 'converting'
+      });
+      setUploadProgress(0);
+
+      // Detect if file is iOS HEIC/HEIF
+      const isHeic = /\.(heic|heif)$/i.test(file.name) || file.type === "image/heic" || file.type === "image/heif";
+
+      if (isHeic) {
+        try {
+          if (heic2anyLib) {
+            console.log(`Converting HEIC file: ${displayName}...`);
+            const conversionResult = await heic2anyLib({
+              blob: file,
+              toType: "image/jpeg",
+              quality: 0.8
+            });
+
+            const blob = Array.isArray(conversionResult) ? conversionResult[0] : conversionResult;
+            const newName = file.name.replace(/\.(heic|heif)$/i, ".jpg");
+            file = new File([blob], newName, { type: "image/jpeg" });
+          } else {
+            throw new Error("Client converter module is not available.");
+          }
+        } catch (err: any) {
+          console.error("HEIC conversion failed:", err);
+          setGalleryError(prev => prev ? `${prev}\nFailed to decode HEIC (${displayName}): ${err.message || err}` : `Failed to decode HEIC (${displayName}): ${err.message || err}`);
+          failedCount++;
+          continue;
+        }
+      }
+
+      setMultiUploadStatus(prev => prev ? { ...prev, stage: 'uploading' } : null);
+
+      const fileName = `${Date.now()}_${file.name}`;
+      const storagePath = `gallery/${fileName}`;
+      const fileRef = ref(storage, storagePath);
+
+      try {
+        // 1. Try Firebase Storage standard upload
+        const uploadTask = uploadBytesResumable(fileRef, file);
+        
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            (snapshot) => {
+              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+              setUploadProgress(pct);
+            }, 
+            (error) => {
+              console.warn("Storage upload failed, fallback to base64: ", error);
+              reject(error);
+            }, 
+            () => resolve()
+          );
+        });
+
+        const downloadURL = await getDownloadURL(fileRef);
+
+        setMultiUploadStatus(prev => prev ? { ...prev, stage: 'saving' } : null);
+
+        // Save to collection via Proxy API
+        const apiRes = await fetch("/api/gallery-images", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+          },
+          body: JSON.stringify({
+            url: downloadURL,
+            name: caption.trim() || file.name,
+            caption: caption.trim(),
+            storagePath: storagePath
+          })
+        });
+
+        if (!apiRes.ok) {
+          const apiErr = await apiRes.json();
+          throw new Error(apiErr.error || "Proxy save rejected.");
+        }
+
+        successCount++;
+      } catch (err: any) {
+        console.log("Storage upload skipped or failed, using base64 direct embedding...");
+        try {
+          const base64Data = await convertToBase64(file);
+          
+          const apiRes = await fetch("/api/gallery-images", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+            },
+            body: JSON.stringify({
+              url: base64Data,
+              name: caption.trim() || file.name,
+              caption: caption.trim()
+            })
+          });
+
+          if (!apiRes.ok) {
+            const apiErr = await apiRes.json();
+            throw new Error(apiErr.error || "Proxy base64 save rejected.");
+          }
+
+          successCount++;
+        } catch (fallbackErr: any) {
+          setGalleryError(prev => prev ? `${prev}\nFallback Upload Error (${displayName}): ${fallbackErr.message}` : `Fallback Upload Error (${displayName}): ${fallbackErr.message}`);
+          failedCount++;
+        }
+      }
+    }
+
+    setCaption("");
+    setUploading(false);
+    setMultiUploadStatus(null);
+    setUploadProgress(0);
+
+    if (successCount > 0) {
+      if (failedCount > 0) {
+        setGallerySuccess(`Successfully processed and uploaded ${successCount} photo(s). ${failedCount} photo(s) failed.`);
+      } else {
+        setGallerySuccess(`Successfully uploaded all ${successCount} photo(s) to North Cobb portfolio!`);
+      }
+    } else if (failedCount > 0) {
+      setGalleryError(`Batch upload failed. Verify connections and try again.`);
+    }
+  };
+
+  const handleAddUrlImage = async () => {
+    if (!imageUrl) {
+      setGalleryError("Please enter a valid Image URL first.");
+      return;
+    }
+    setUploading(true);
+    setGalleryError("");
+    setGallerySuccess("");
+    try {
+      const apiRes = await fetch("/api/gallery-images", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+        },
+        body: JSON.stringify({
+          url: imageUrl.trim(),
+          name: caption.trim() || `Linked Photo - ${new Date().toLocaleDateString()}`,
+          caption: caption.trim()
+        })
+      });
+
+      if (!apiRes.ok) {
+        const apiErr = await apiRes.json();
+        throw new Error(apiErr.error || "Proxy url save rejected.");
+      }
+
+      setGallerySuccess("Successfully linked custom photo!");
+      setImageUrl("");
+      setCaption("");
+    } catch (err: any) {
+      setGalleryError(`Firestore Link Failure: ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteGalleryImage = async (photo: any) => {
+    if (!window.confirm("Are you sure you want to delete this photo from the gallery?")) return;
+    try {
+      setGalleryError("");
+      setGallerySuccess("");
+
+      if (!photo.id.startsWith("storage-")) {
+        const apiRes = await fetch(`/api/gallery-images/${photo.id}`, {
+          method: "DELETE",
+          headers: {
+            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+          }
+        });
+
+        if (!apiRes.ok) {
+          const apiErr = await apiRes.json();
+          throw new Error(apiErr.error || "Proxy deletion rejected.");
+        }
+      }
+
+      if (photo.storagePath) {
+        try {
+          const fileRef = ref(storage, photo.storagePath);
+          await deleteObject(fileRef);
+        } catch (storageErr) {
+          console.warn("Storage cleanup skipped or unsuccessful:", storageErr);
+        }
+      }
+
+      setGallerySuccess("Successfully deleted photo from portfolio.");
+      setTimeout(() => {
+        fetchGalleryPhotos();
+        checkStorageFiles();
+      }, 800);
+    } catch (err: any) {
+      setGalleryError(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  // --- TEMPORARY BATCH PORTFOLIO MIGRATION UTILITY ---
+  const staticMigratables = [
+    "/IMG_0659.jpeg",
+    "/IMG_0663.jpeg",
+    "/impala close up cinematic front.jpeg",
+    "/impala exterior front view.jpeg",
+    "/impala shined wheels.jpeg",
+    "/impala another exterior side.jpeg",
+    "/impala back seat.jpeg",
+    "/IMG_7813.jpeg",
+    "/IMG_7815.jpeg",
+    "/IMG_7816.jpeg",
+    "/IMG_7817.jpeg",
+    "/IMG_7819.jpeg",
+    "/IMG_7820.jpeg",
+    "/IMG_7821.jpeg",
+    "/IMG_7823.jpeg",
+    "/IMG_7824.jpeg",
+    "/IMG_7825.jpeg",
+    "/IMG_7826.jpeg",
+    "/IMG_7827.jpeg",
+    "/IMG_7829.jpeg",
+    "/IMG_7830.jpeg",
+    "/IMG_7838.jpeg",
+    "/IMG_0648.jpeg",
+    "/IMG_0985.jpeg",
+    "/IMG_0986.jpeg",
+    "/IMG_0990.jpeg",
+    "/IMG_0991.jpeg",
+    "/IMG_0992.jpeg",
+    "/IMG_0994.jpeg",
+    "/IMG_0995.jpeg",
+    "/IMG_0996.jpeg",
+    "/IMG_0997.jpeg",
+    "/IMG_1001.jpeg"
+  ];
+
+  type MigrationStatus = 'idle' | 'downloading' | 'uploading' | 'completed' | 'failed' | 'already-exists';
+  const [migrationTasks, setMigrationTasks] = useState<{[key: string]: {status: MigrationStatus, error?: string, progress?: number}}>({});
+  const [isMigratingAll, setIsMigratingAll] = useState(false);
+  const [migrationLog, setMigrationLog] = useState<string[]>([]);
+
+  // Function to migrate a single asset with fallback support
+  const handleMigrateSingle = async (path: string) => {
+    // 1. Format Name and verify if already added to gallery
+    const cleanName = path.replace(/^\//, "");
+    const formattedName = cleanName
+      .replace(/\.[^/.]+$/, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+    const alreadyExists = galleryPhotos.some(gp => 
+      gp.name === formattedName || 
+      gp.url?.includes(cleanName) || 
+      (gp.storagePath && gp.storagePath.includes(cleanName))
+    );
+
+    const alreadyInStorage = existingStorageFiles.some(f => f.name.includes(cleanName));
+
+    if (alreadyExists || alreadyInStorage) {
+      setMigrationTasks(prev => ({
+        ...prev,
+        [path]: { status: 'already-exists', progress: 100 }
+      }));
+      if (alreadyInStorage && !alreadyExists) {
+        setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏭️ Skipped (already in Storage bucket): ${cleanName}`]);
+      }
+      return;
+    }
+
+    setMigrationTasks(prev => ({
+      ...prev,
+      [path]: { status: 'downloading', progress: 0 }
+    }));
+
+    try {
+      // Check if file is already in Firebase Storage but unlinked in database
+      const existingFile = existingStorageFiles.find(f => f.name.includes(cleanName));
+      if (existingFile && existingFile.url) {
+        setMigrationTasks(prev => ({
+          ...prev,
+          [path]: { status: 'uploading', progress: 60 }
+        }));
+        setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ☁️ File found in Storage bucket: '${existingFile.name}'. Skipping cloud upload, registering direct DB Link...`]);
+        try {
+          const apiRes = await fetch("/api/gallery-images", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+            },
+            body: JSON.stringify({
+              url: existingFile.url,
+              name: formattedName,
+              caption: "Migrated Driveway Portfolio Asset",
+              storagePath: `gallery/${existingFile.name}`
+            })
+          });
+
+          if (!apiRes.ok) {
+            const apiErr = await apiRes.json();
+            throw new Error(apiErr.error || "Proxy register failed.");
+          }
+
+          setMigrationTasks(prev => ({
+            ...prev,
+            [path]: { status: 'completed', progress: 100 }
+          }));
+          setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✓ Successfully matched and registered '${cleanName}' with existing Storage file.`]);
+          return;
+        } catch (dbErr: any) {
+          console.warn(`Direct DB configuration failed for existing file:`, dbErr);
+          setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚠️ Link step failed (${cleanName}): ${dbErr.message}. Falling back to embedded local storage...`]);
+          throw dbErr; // Let it fall through to the catch block & Base64 option
+        }
+      }
+
+      // 1. Fetch file as Blob directly from public assets folder
+      const response = await fetch(path);
+      if (!response.ok) {
+        throw new Error(`Static file status error: ${response.status}`);
+      }
+
+      setMigrationTasks(prev => ({
+        ...prev,
+        [path]: { status: 'uploading', progress: 20 }
+      }));
+
+      const blob = await response.blob();
+
+      // 2. Upload to Firebase Storage
+      const storagePath = `gallery/migrated_${Date.now()}_${cleanName}`;
+      const fileRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(fileRef, blob);
+
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on('state_changed', 
+          (snapshot) => {
+            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            setMigrationTasks(prev => ({
+              ...prev,
+              [path]: { status: 'uploading', progress: 20 + Math.round(pct * 0.7) }
+            }));
+          }, 
+          (error) => reject(error), 
+          () => resolve()
+        );
+      });
+
+      const downloadURL = await getDownloadURL(fileRef);
+
+      // 3. Add to Firestore collection via Proxy API
+      const apiRes = await fetch("/api/gallery-images", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+        },
+        body: JSON.stringify({
+          url: downloadURL,
+          name: formattedName,
+          caption: "Migrated Driveway Portfolio Asset",
+          storagePath: storagePath
+        })
+      });
+
+      if (!apiRes.ok) {
+        const apiErr = await apiRes.json();
+        throw new Error(apiErr.error || "Proxy add failed.");
+      }
+
+      setMigrationTasks(prev => ({
+        ...prev,
+        [path]: { status: 'completed', progress: 100 }
+      }));
+      setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✓ Successfully migrated: ${cleanName}`]);
+    } catch (err: any) {
+      console.warn(`Storage upload rejected for ${path}, activating embedded fallback...`, err);
+      // Fallback base64 conversion & Firestore save
+      try {
+        const response = await fetch(path);
+        if (response.ok) {
+          const blob = await response.blob();
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          const base64Data = await base64Promise;
+
+          // Add to Firestore collection via Proxy API
+          const apiRes = await fetch("/api/gallery-images", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+            },
+            body: JSON.stringify({
+              url: base64Data,
+              name: formattedName,
+              caption: "Migrated Driveway Portfolio Asset (Embedded Entry)"
+            })
+          });
+
+          if (!apiRes.ok) {
+            const apiErr = await apiRes.json();
+            throw new Error(apiErr.error || "Proxy base64 embed failed.");
+          }
+
+          setMigrationTasks(prev => ({
+            ...prev,
+            [path]: { status: 'completed', progress: 100 }
+          }));
+          setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✓ Successfully migrated (embedded database): ${cleanName}`]);
+          return;
+        }
+      } catch (fallbackErr: any) {
+        console.error("Fallback script failed too:", fallbackErr);
+      }
+
+      setMigrationTasks(prev => ({
+        ...prev,
+        [path]: { status: 'failed', error: err.message || "Unknown Error" }
+      }));
+      setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ Failed to migrate ${cleanName}: ${err.message}`]);
+    }
+  };
+
+  // Run bulk sequential migration
+  const handleMigrateAll = async () => {
+    if (isMigratingAll) return;
+    setIsMigratingAll(true);
+    setMigrationLog(prev => [...prev, `\n--- Starting batch migration for ${staticMigratables.length} files... ---`]);
+
+    let successCount = 0;
+    let skipCount = 0;
+
+    for (const path of staticMigratables) {
+      const cleanName = path.replace(/^\//, "");
+      const formattedName = cleanName
+        .replace(/\.[^/.]+$/, "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase());
+
+      // Pre-check skip
+      const alreadyExists = galleryPhotos.some(gp => 
+        gp.name === formattedName || 
+        gp.url?.includes(cleanName) || 
+        (gp.storagePath && gp.storagePath.includes(cleanName))
+      );
+
+      const alreadyInStorage = existingStorageFiles.some(f => f.name.includes(cleanName));
+
+      if (alreadyExists || alreadyInStorage) {
+        setMigrationTasks(prev => ({
+          ...prev,
+          [path]: { status: 'already-exists', progress: 100 }
+        }));
+        skipCount++;
+        if (alreadyInStorage && !alreadyExists) {
+          setMigrationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏭️ Skipped (already in Storage bucket): ${cleanName}`]);
+        }
+        continue;
+      }
+
+      await handleMigrateSingle(path);
+      successCount++;
+      // Minimal cooling interval
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+
+    setIsMigratingAll(false);
+    setMigrationLog(prev => [...prev, `--- Migration task completed! Moved: ${successCount} items, Already Migrated: ${skipCount} items. ---`]);
+  };
 
   const authorizedEmails = ["npatel012010@gmail.com", "northcobbdetailing@gmail.com"];
 
@@ -60,20 +706,17 @@ export default function AdminPortal() {
 
   const saveOwnerToken = async (email: string, token: string) => {
     try {
-      if (email === "northcobbdetailing@gmail.com") {
-        await setDoc(doc(db, "admin_config", "oauth"), {
-          accessToken: token,
-          updatedAt: new Date().toISOString(),
-          email: email
-        });
-      }
-      // Save to authenticated_owners collection to dynamically record portal users
-      await setDoc(doc(db, "authenticated_owners", email), {
-        email: email,
-        accessToken: token,
-        updatedAt: new Date().toISOString(),
-        hasToken: true
+      const res = await fetch("/api/save-owner-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email, token })
       });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed secure token transmission.");
+      }
     } catch (err: any) {
       console.error("Failed to automatically save Owner OAuth token: ", err);
     }
@@ -104,6 +747,20 @@ export default function AdminPortal() {
     return () => unsubscribe();
   }, []);
 
+  const fetchBookings = async () => {
+    try {
+      const response = await fetch("/api/bookings");
+      if (response.ok) {
+        const data = await response.json();
+        setBookings(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch bookings via API:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Subscribe to raw Bookings collection
   useEffect(() => {
     if (!isAdminAuth) {
@@ -112,20 +769,10 @@ export default function AdminPortal() {
     }
 
     setLoading(true);
-    const q = query(collection(db, "bookings"), orderBy("dateTime", "asc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const items: Booking[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push({ id: docSnap.id, ...docSnap.data() } as Booking);
-      });
-      setBookings(items);
-      setLoading(false);
-    }, (error) => {
-      console.error("Firestore loading error:", error);
-      setLoading(false);
-    });
+    fetchBookings();
+    const interval = setInterval(fetchBookings, 8000); // Check for edits every 8s
 
-    return () => unsubscribe();
+    return () => clearInterval(interval);
   }, [isAdminAuth]);
 
   // Autopilot processor
@@ -593,13 +1240,23 @@ export default function AdminPortal() {
         addLog(`- Gmail Alert: Failed to email customer: ${mailError.message}`);
       }
 
-      // 3. Update Firestore database state keys
-      const bookingDocRef = doc(db, "bookings", booking.id!);
+      // 3. Update Firestore database state keys via Proxy API
       const updateData: any = { status: "confirmed" };
       if (calendarEventId) {
         updateData.calendarEventId = calendarEventId;
       }
-      await updateDoc(bookingDocRef, updateData);
+      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+        },
+        body: JSON.stringify(updateData)
+      });
+      if (!apiRes.ok) {
+        const apiErr = await apiRes.json();
+        throw new Error(apiErr.error || "Proxy patch status failed.");
+      }
       addLog(`Status Updated! [${booking.name}] marked as CONFIRMED in Database.`);
 
     } catch (err: any) {
@@ -613,8 +1270,18 @@ export default function AdminPortal() {
     if (!confirmed) return;
 
     try {
-      const bookingDocRef = doc(db, "bookings", booking.id!);
-      await updateDoc(bookingDocRef, { status: "cancelled" });
+      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+        },
+        body: JSON.stringify({ status: "cancelled" })
+      });
+      if (!apiRes.ok) {
+        const apiErr = await apiRes.json();
+        throw new Error(apiErr.error || "Proxy patch cancel failed.");
+      }
       addLog(`Booking for ${booking.name} cancelled.`);
     } catch (err: any) {
       addLog(`Failed to cancel booking: ${err.message}`);
@@ -635,11 +1302,21 @@ export default function AdminPortal() {
     const finalRevenue = isNaN(parsed) ? estimated : parsed;
 
     try {
-      const bookingDocRef = doc(db, "bookings", booking.id!);
-      await updateDoc(bookingDocRef, { 
-        status: "completed",
-        actualRevenue: finalRevenue
+      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+        },
+        body: JSON.stringify({ 
+          status: "completed",
+          actualRevenue: finalRevenue
+        })
       });
+      if (!apiRes.ok) {
+        const apiErr = await apiRes.json();
+        throw new Error(apiErr.error || "Proxy patch complete failed.");
+      }
       addLog(`Job for ${booking.name} marked as COMPLETED. Actual revenue recorded: $${finalRevenue}`);
     } catch (err: any) {
       addLog(`Failed to complete booking: ${err.message}`);
@@ -666,7 +1343,17 @@ export default function AdminPortal() {
           addLog(`- Google Calendar Alert: Unable to delete event: ${calError.message}`);
         }
       }
-      await deleteDoc(doc(db, "bookings", booking.id!));
+      
+      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+        method: "DELETE",
+        headers: {
+          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+        }
+      });
+      if (!apiRes.ok) {
+        const apiErr = await apiRes.json();
+        throw new Error(apiErr.error || "Proxy delete booking failed.");
+      }
       addLog(`Deleted booking document: ${booking.id!!}`);
     } catch (err: any) {
       addLog(`Delete failed: ${err.message}`);
@@ -929,7 +1616,7 @@ export default function AdminPortal() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dashed border-[#e6dccf] pb-2">
             <h5 className="text-xs font-bold text-[#2e261f] font-mono tracking-widest uppercase">
-              {activeTab === 'active' ? "Active Schedule Queue" : "Completed Jobs Record"}
+              {activeTab === 'active' ? "Active Schedule Queue" : activeTab === 'completed' ? "Completed Jobs Record" : "Driveway Portfolio Manager"}
             </h5>
             <div className="flex bg-[#faf8f5] border border-[#e6dccf] p-0.5 rounded-lg gap-1 self-start">
               <button
@@ -954,10 +1641,241 @@ export default function AdminPortal() {
               >
                 Completed ({bookings.filter(b => b.status === "completed").length})
               </button>
+              <button
+                id="gallery_tab_btn"
+                onClick={() => setActiveTab('gallery')}
+                className={`px-3 py-1 text-[10px] font-mono font-bold uppercase transition-all rounded-md cursor-pointer ${
+                  activeTab === 'gallery'
+                    ? "bg-[#b45309] text-white shadow-sm"
+                    : "text-[#5c544a] hover:bg-[#efece6] hover:text-[#2e261f]"
+                }`}
+              >
+                Manage Gallery
+              </button>
             </div>
           </div>
           
-          {loading ? (
+          {activeTab === 'gallery' ? (
+            <div className="space-y-6">
+              {/* GALLERY MANAGER VIEW */}
+              <div className="bg-[#faf8f5] border border-[#e6dccf] p-5 relative"
+                style={{ borderRadius: "16px 2px 16px 2px" }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="p-1 px-2.5 bg-[#fff9e6] border border-amber-300 text-amber-900 font-mono text-[9px] font-black rounded uppercase tracking-widest">
+                    SYNC MEDIA PORT
+                  </span>
+                  <Sparkles className="w-3.5 h-3.5 text-[#b45309]" />
+                </div>
+                
+                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Add Dynamic Gallery Shot</h6>
+                <p className="text-[11px] text-[#5c544a] mb-4">
+                  Select a picture to upload directly. Photos instantly sync live and render dynamically alongside static items.
+                </p>
+
+                {/* Feedback boxes */}
+                {galleryError && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded text-xs mb-3 font-mono leading-normal">
+                    ⚠️ {galleryError}
+                  </div>
+                )}
+                {gallerySuccess && (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded text-xs mb-3 font-mono leading-normal">
+                    ✓ {gallerySuccess}
+                  </div>
+                )}
+
+                {/* Upload Form Elements */}
+                <div className="space-y-4">
+                  {/* Caption */}
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5 font-mono">
+                      Photo Title / Caption
+                    </label>
+                    <input
+                      type="text"
+                      value={caption}
+                      onChange={(e) => setCaption(e.target.value)}
+                      placeholder="e.g. Arthur shine finish on red Charger"
+                      className="w-full px-3 py-2 text-xs bg-white border border-[#e6dccf] text-[#2e261f] focus:outline-none focus:border-amber-500 rounded"
+                      disabled={uploading}
+                    />
+                  </div>
+
+                  {/* Input Method Switcher */}
+                  <div className="flex gap-2.5 border-b border-[#e6dccf] pb-3">
+                    <button
+                      type="button"
+                      onClick={() => setImageInputMethod('file')}
+                      className={`text-[10px] font-mono font-black uppercase tracking-wider px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                        imageInputMethod === 'file' 
+                          ? 'bg-[#b45309] text-white' 
+                          : 'bg-white hover:bg-[#efece6] border border-[#e6dccf] text-zinc-500'
+                      }`}
+                    >
+                      📁 Local File Upload
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageInputMethod('url')}
+                      className={`text-[10px] font-mono font-black uppercase tracking-wider px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                        imageInputMethod === 'url' 
+                          ? 'bg-[#b45309] text-white' 
+                          : 'bg-white hover:bg-[#efece6] border border-[#e6dccf] text-zinc-500'
+                      }`}
+                    >
+                      🔗 Paste Web URL Link
+                    </button>
+                  </div>
+
+                  {/* Method Panels */}
+                  {imageInputMethod === 'file' ? (
+                    <div className="border-2 border-dashed border-[#e6dccf] hover:border-amber-500 bg-white/60 p-6 text-center rounded-xl transition-all relative">
+                      {uploading ? (
+                        <div className="space-y-3 py-4">
+                          <span className="inline-block animate-spin text-xl text-[#b45309]">⌛</span>
+                          {multiUploadStatus ? (
+                            <div className="space-y-1">
+                              <p className="text-xs font-mono text-[#b45309] font-black uppercase tracking-wider">
+                                {multiUploadStatus.stage === 'converting' && "🔄 Decoding iPhone HEIC file..."}
+                                {multiUploadStatus.stage === 'uploading' && "📤 Syncing file to Cloud Storage..."}
+                                {multiUploadStatus.stage === 'saving' && "💾 Saving details to database..."}
+                              </p>
+                              <p className="text-xs text-[#2e261f] font-bold truncate max-w-xs mx-auto">
+                                File {multiUploadStatus.current} of {multiUploadStatus.total}: <span className="font-mono text-zinc-650">{multiUploadStatus.currentName}</span>
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs font-mono text-zinc-650 font-bold">Processing uploads...</p>
+                          )}
+
+                          <div className="w-52 bg-zinc-100 h-2 mx-auto rounded-full overflow-hidden border border-zinc-200 shadow-inner">
+                            <div className="bg-amber-600 h-full transition-all duration-150 rounded-full" style={{ width: `${uploadProgress}%` }}></div>
+                          </div>
+                          
+                          <p className="text-[10px] text-zinc-500 font-mono">
+                            {multiUploadStatus && multiUploadStatus.total > 1 ? (
+                              `Overall Batch Progress: ${Math.round(((multiUploadStatus.current - 1) / multiUploadStatus.total) * 100)}%`
+                            ) : (
+                              `Single File Progress: ${uploadProgress}%`
+                            )}
+                          </p>
+                          <p className="text-[9px] text-[#854d0e] bg-amber-50 border border-amber-200/50 p-1 rounded max-w-xs mx-auto font-mono">
+                            Auto backup base64 database sync stands by as redundancy.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <UploadCloud className="w-10 h-10 text-amber-750/70 mx-auto animate-pulse" />
+                          <p className="text-xs font-extrabold text-[#2e261f]">Click to browse or drag & drop images</p>
+                          <p className="text-[10px] text-[#5c544a] font-mono uppercase tracking-wider">
+                            Supports Jpeg, Png, Webp, or iOS HEIC/HEIF files
+                          </p>
+                          <input
+                            type="file"
+                            accept="image/*,.heic,.heif,image/heic,image/heif"
+                            multiple
+                            onChange={(e) => {
+                              const files = e.target.files;
+                              if (files && files.length > 0) {
+                                handleAddMultipleFiles(files);
+                              }
+                            }}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 bg-white border border-[#e6dccf] p-4 rounded-xl">
+                      <div>
+                        <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-500 mb-1 font-mono">
+                          Image Web Link (HTTP/HTTPS)
+                        </label>
+                        <input
+                          type="url"
+                          value={imageUrl}
+                          onChange={(e) => setImageUrl(e.target.value)}
+                          placeholder="e.g. https://imgur.com/your-detailing-shot.jpeg"
+                          className="w-full px-3 py-2 text-xs bg-[#fafafc] border border-[#e6dccf] text-[#2e261f] focus:outline-none focus:border-amber-500 rounded"
+                          disabled={uploading}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddUrlImage}
+                        disabled={uploading}
+                        className="w-full px-4 py-2 bg-[#b45309] hover:bg-[#92400e] text-white text-xs font-black uppercase tracking-wider transition-colors cursor-pointer"
+                        style={{ borderRadius: "6px 2px 6px 2px" }}
+                      >
+                        {uploading ? "Linking Media..." : "Save Photo Link to Portfolio"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CURRENT LOADED IMAGES FEED */}
+              <div className="space-y-3">
+                <h6 className="text-xs font-bold text-[#2e261f] font-mono tracking-widest uppercase border-b border-dashed border-[#e6dccf] pb-2">
+                  Active Dynamic Portfolio Items ({mergedDynamicPhotos.length} Photos)
+                </h6>
+
+                {mergedDynamicPhotos.length === 0 ? (
+                  <div className="text-center py-12 bg-white border border-dashed border-[#e6dccf] text-zinc-500 text-xs italic"
+                    style={{ borderRadius: "12px 2px 12px 2px" }}
+                  >
+                    No custom dynamic images uploaded yet. Added photos will list and manage here live.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {mergedDynamicPhotos.map((photo) => {
+                      const isBase64 = photo.url.startsWith("data:");
+                      return (
+                        <div
+                          key={photo.id}
+                          className="bg-white border border-[#e6dccf] p-2 relative group hover:shadow-md transition-all flex flex-col justify-between"
+                          style={{ borderRadius: "10px 2px 10px 2px" }}
+                        >
+                          <div className="aspect-square w-full bg-zinc-50 overflow-hidden rounded relative border border-zinc-150">
+                            <img
+                              src={photo.url}
+                              alt={photo.name}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                            {isBase64 && (
+                              <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-amber-50 text-[8px] font-mono text-amber-800 font-bold border border-amber-200 uppercase rounded tracking-wider leading-none select-none">
+                                DB Embedded
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-2 text-left">
+                            <p className="text-[10px] font-black font-serif line-clamp-1 text-[#2e261f]">
+                              {photo.name}
+                            </p>
+                            <span className="text-[8px] font-mono text-zinc-400 block mt-0.5">
+                              {photo.createdAt ? new Date(photo.createdAt).toLocaleDateString() : "Custom Linked"}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGalleryImage(photo)}
+                            className="absolute top-2 right-2 p-1.5 bg-red-50 hover:bg-red-200 text-red-650 rounded hover:text-red-700 transition-all cursor-pointer border border-red-200"
+                            title="Delete this dynamic image instantly"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : loading ? (
             <div className="text-center py-10 text-zinc-500 text-xs font-serif italic">Searching driveway schedules...</div>
           ) : displayedBookings.length === 0 ? (
             <div className="text-center py-10 text-zinc-500 text-xs border border-dashed border-[#e6dccf] p-6"

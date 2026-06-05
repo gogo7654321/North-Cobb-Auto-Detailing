@@ -28,6 +28,19 @@
         "email": { "type": "string", "description": "Owner email" }
       },
       "required": ["accessToken", "updatedAt", "email"]
+    },
+    "GalleryImage": {
+      "title": "GalleryImage",
+      "description": "A dynamic photo uploaded by the owner for showcase in the work gallery.",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "description": "Download URL of the images or Base64 encoding" },
+        "name": { "type": "string", "description": "Original file name of the gallery item" },
+        "caption": { "type": "string", "description": "Optional title or description for the photo" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Upload timestamp" },
+        "storagePath": { "type": "string", "description": "Optional storage path if deleted from Storage" }
+      },
+      "required": ["url", "name", "createdAt"]
     }
   },
   "firestore": {
@@ -38,6 +51,14 @@
     "admin_config/{docId}": {
       "schema": "AdminConfig",
       "description": "Dynamic configurations and private tokens for backend dispatchers."
+    },
+    "gallery_images/{imageId}": {
+      "schema": "GalleryImage",
+      "description": "Dynamic pictures uploaded to show premium workmanship."
+    },
+    "authenticated_owners/{email}": {
+      "schema": "AdminConfig",
+      "description": "Records of logged-in authorized owner addresses and cache sessions."
     }
   }
 }

@@ -21,23 +21,29 @@ const SERVICE_TIERS: DetailingService[] = [
     name: "Interior Detail",
     price: 80,
     duration: "1.5 hours",
-    description: "Complete interior cleaning including custom vacuuming seats, carpets, and trunk. All surfaces wiped down and detailed (dash, doors, center console). Crevices thoroughly cleared. Weather mat restoration included. All interior glass cleaned for a streak-free finish.",
+    description: "Complete interior cleaning including custom vacuuming seats, carpets, and trunk. All surfaces wiped down and detailed (dash, doors, center console). Crevices thoroughly cleared. Weather mat restoration included. All interior glass cleaned for a streak-free finish. Now includes specialized front glass bug cleaner, exterior hand wax, and a complimentary premium air freshener.",
     features: [
       "Full vacuum (seats, carpets, trunk)",
       "Wipe down all surfaces (dash, doors, center console)",
       "Crevices and tight areas detailed (removes built-up dust and debris)",
       "Weather mat restoration & deep scrubbing",
-      "Interior glass cleaned (streak-free finish)"
+      "Interior glass cleaned (streak-free finish)",
+      "Specialized bug cleaner application for windshield & front trim",
+      "Protective hand-applied wax for glass & trim gloss",
+      "Complementary premium long-lasting air freshener"
     ]
   },
   {
     name: "Full Detail",
     price: 120,
     duration: "Under 3 hours",
-    description: "The ultimate bumper-to-bumper reset. Combines both full interior and exterior details. (Note: prices are estimates and vary depending on vehicle size and dirtiness).",
+    description: "The ultimate bumper-to-bumper reset. Combines both full interior and exterior details. Includes professional bug cleaner treatment, premium protective hand wax, and a complimentary long-lasting premium air freshener of your choice. (Note: prices are estimates and vary depending on vehicle size and dirtiness).",
     features: [
       "Everything in Exterior Detail",
       "Everything in Interior Detail",
+      "Specialized front-end bug cleaner treatment (grill, bumpers, side mirrors)",
+      "Premium protective hand-applied paste wax coating & high-shine buffing",
+      "Complementary choice of premium long-lasting air freshener",
       "Complete inside and out reset for a clean, refreshed, like-new feel"
     ]
   }

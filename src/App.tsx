@@ -102,7 +102,7 @@ export default function App() {
               <h1 className="text-sm font-serif font-black tracking-widest text-[#2e261f]">
                 NORTH COBB <span className="text-[#b45309]">DETAIL</span>
               </h1>
-              <span className="text-[9px] tracking-widest block uppercase font-mono font-bold text-zinc-500">
+              <span className="text-[9px] tracking-widest block uppercase font-sans font-bold text-zinc-500">
                 [ Driveway Handcrafted Care ]
               </span>
             </div>
@@ -278,15 +278,15 @@ export default function App() {
                 <div className="grid grid-cols-3 gap-6 pt-6 text-center lg:text-left max-w-md mx-auto lg:mx-0 border-t border-[#e6dccf] mt-10">
                   <div>
                     <span className="text-xl font-serif font-black text-[#2e261f] block">2 Men</span>
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider font-bold">Per Detailing Job</span>
+                    <span className="text-[10px] text-zinc-500 font-sans uppercase tracking-wider font-bold">Per Detailing Job</span>
                   </div>
                   <div className="border-x border-[#e6dccf] px-2">
                     <span className="text-xl font-serif font-black text-[#2e261f] block">1 - 3 Hrs</span>
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider font-bold">Fast Turnaround</span>
+                    <span className="text-[10px] text-zinc-500 font-sans uppercase tracking-wider font-bold">Fast Turnaround</span>
                   </div>
                   <div>
                     <span className="text-xl font-serif font-black text-[#2e261f] block">$50 - $120</span>
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider font-bold">Estimated Base Rates</span>
+                    <span className="text-[10px] text-zinc-500 font-sans uppercase tracking-wider font-bold">Estimated Base Rates</span>
                   </div>
                 </div>
 
@@ -313,7 +313,7 @@ export default function App() {
                   </div>
                   
                   <div className="p-4 text-center mt-1">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-[#b45309] font-black block">Featured Restorative Work</span>
+                    <span className="text-[10px] font-sans uppercase tracking-widest text-[#b45309] font-black block">Featured Restorative Work</span>
                     <p className="text-xs text-[#5c544a] italic mt-1 font-serif">Ultra-premium show-car shine hand-crafted right in your driveway.</p>
                   </div>
                 </div>
@@ -364,6 +364,90 @@ export default function App() {
                 isFullPage={false} 
                 onNavigateToGallery={() => { setSelectedTab("gallery"); window.location.hash = "#gallery"; }}
               />
+            </section>
+
+            {/* HYPER-LOCAL SEO SERVICE AREA GUIDE (Engineered to Rank #1 for Kennesaw & Acworth Detailing) */}
+            <section className="bg-[#fffcf9] border-2 border-[#e6dccf] p-6 sm:p-10 rounded-3xl space-y-8 relative overflow-hidden" style={{ borderRadius: "24px 4px 24px 4px" }}>
+              <div className="absolute top-0 right-0 p-4 opacity-[0.04] pointer-events-none">
+                <MapPin className="w-40 h-40 text-[#b45309]" />
+              </div>
+
+              <div className="text-center max-w-2xl mx-auto space-y-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200/50 rounded-full text-[10px] font-bold text-[#b45309] uppercase tracking-widest font-sans">
+                  📍 Local Neighborhood Coverage Map
+                </span>
+                <h3 className="text-3xl font-serif font-black text-[#2e261f] tracking-tight">
+                  Mobile Auto Detailing Services Across North Cobb
+                </h3>
+                <p className="text-zinc-600 text-xs sm:text-sm">
+                  We bring our mobile detailing rig straight to your driveway or commercial office parking slot. Serving Kennesaw, Acworth, Marietta, and surrounding Cobb County areas daily.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+                {/* Kennesaw Detail hub */}
+                <div className="bg-white border border-[#e6dccf] p-6 rounded-xl hover:shadow-md transition-all space-y-3" style={{ borderRadius: "16px 2px 16px 2px" }}>
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <MapPin className="w-4 h-4 shrink-0" />
+                    <h4 className="text-sm font-bold uppercase tracking-wider font-sans">Kennesaw GA Detailing</h4>
+                  </div>
+                  <p className="text-xs text-zinc-650 leading-relaxed font-semibold">
+                    The #1 rated choice for <strong className="text-[#b45309]">Kennesaw car detailing</strong> and prompt mobile wash packages.
+                  </p>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    We serve all neighborhoods off Wade Green Road, Stilesboro Road, Cherokee Street, Kennesaw State University (KSU) Campus, McCollum Field, Barrett Parkway, and Cobb Parkway.
+                  </p>
+                  <div className="pt-2 flex flex-wrap gap-1">
+                    <span className="text-[9px] font-sans font-bold bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-zinc-650">30144</span>
+                    <span className="text-[9px] font-sans font-bold bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-zinc-650">30152</span>
+                  </div>
+                </div>
+
+                {/* Acworth Detail hub */}
+                <div className="bg-white border border-[#e6dccf] p-6 rounded-xl hover:shadow-md transition-all space-y-3" style={{ borderRadius: "16px 2px 16px 2px" }}>
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <MapPin className="w-4 h-4 shrink-0" />
+                    <h4 className="text-sm font-bold uppercase tracking-wider font-sans">Acworth GA Detailing</h4>
+                  </div>
+                  <p className="text-xs text-zinc-650 leading-relaxed font-semibold">
+                    Handcrafted <strong className="text-[#b45309]">Acworth car detailing</strong> and buffer-free paint restoration.
+                  </p>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Bringing showroom shine to Bentwater, Brookstone, Cedarcrest, Acworth Beach, South Main Street, Highway 92, and surrounding Lake Allatoona neighborhoods.
+                  </p>
+                  <div className="pt-2 flex flex-wrap gap-1">
+                    <span className="text-[9px] font-sans font-bold bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-zinc-650">30101</span>
+                    <span className="text-[9px] font-sans font-bold bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-zinc-650">30102</span>
+                  </div>
+                </div>
+
+                {/* North Cobb Detail hub */}
+                <div className="bg-white border border-[#e6dccf] p-6 rounded-xl hover:shadow-md transition-all space-y-3" style={{ borderRadius: "16px 2px 16px 2px" }}>
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <MapPin className="w-4 h-4 shrink-0" />
+                    <h4 className="text-sm font-bold uppercase tracking-wider font-sans">North Cobb & Marietta</h4>
+                  </div>
+                  <p className="text-xs text-zinc-650 leading-relaxed font-semibold">
+                    The premium <strong className="text-[#b45309]">north cobb car detailing</strong> standard for busy professionals.
+                  </p>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Dependable driveway auto wash services covering Bells Ferry Road, Woodstock borders, Town Center, Sandy Plains, West Cobb, and Marietta Square neighborhoods.
+                  </p>
+                  <div className="pt-2 flex flex-wrap gap-1">
+                    <span className="text-[10px] font-sans font-bold bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-zinc-650 text-amber-800 uppercase tracking-widest">[ ALL GA COBB ]</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#e6dccf]/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+                <p className="text-zinc-500 font-serif italic text-center sm:text-left">
+                  "No matter where you live in the North Cobb area, if you have a spigot and an outlet, you quality for premium driveway care."
+                </p>
+                <div className="flex items-center gap-3 font-sans font-bold uppercase text-[10px] tracking-widest">
+                  <span className="text-emerald-700 bg-emerald-50 border border-emerald-250/20 px-2 py-1 rounded">● No Travel Surcharges</span>
+                  <span className="text-amber-800 bg-amber-50 border border-amber-250/20 px-2 py-1 rounded">● Fully Mobile Setup</span>
+                </div>
+              </div>
             </section>
 
             {/* HIGH-CONVERSION TESTIMONIALS SECTION (Vintage Journal Style Columns) */}
@@ -530,8 +614,8 @@ export default function App() {
               <p className="font-serif font-black text-sm tracking-wide text-[#2e261f]">
                 NORTH COBB MOBILE AUTO DETAIL
               </p>
-              <p className="font-mono text-[10px] text-zinc-500">© {new Date().getFullYear()} North Cobb Detailing. All Rights Reserved.</p>
-              <p className="text-[10px] font-mono text-zinc-450">
+              <p className="font-sans text-[10px] text-zinc-500">© {new Date().getFullYear()} North Cobb Detailing. All Rights Reserved.</p>
+              <p className="text-[10px] font-sans text-zinc-450">
                 Website designed & crafted by <span className="text-amber-900 font-bold border-b border-amber-900/20 hover:border-amber-900/50 transition-all font-sans">Neil Mendpara</span>
               </p>
               <p className="text-[11px] leading-relaxed max-w-sm text-zinc-500 pt-1">

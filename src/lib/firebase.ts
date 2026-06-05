@@ -9,6 +9,8 @@ import {
   User 
 } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+
 // Your custom Firebase configuration loaded securely from environment variables
 const getSanitizedAuthDomain = () => {
   let domain = (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN || "";
@@ -43,6 +45,9 @@ export const db = getFirestore(app, "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
+
+// Initialize Firebase Storage
+export const storage = getStorage(app);
 
 // Configure Google Auth Provider with Google Calendar and Gmail scopes
 export const googleProvider = new GoogleAuthProvider();
