@@ -7,29 +7,28 @@ const SERVICE_TIERS: DetailingService[] = [
     name: "Exterior Detail",
     price: 50,
     duration: "1 hour",
-    description: "Full exterior hand wash using professional foam cannon and microfiber mitts. Wheels, tires, and rims thoroughly scrubbed. Vehicle is rinsed and hand-dried with soft microfiber towels. Premium tire and plastic dressing applied for UV protection and a restored shine.",
+    description: "Full exterior hand wash using professional foam cannon and microfiber mitts. Wheels, tires, and rims thoroughly scrubbed. Vehicle is rinsed and hand-dried with soft microfiber towels. Premium tire and plastic dressing applied for UV protection. Now includes specialized front-end bug cleaner treatment and a premium protective hand-applied wax coating.",
     features: [
       "Foam cannon pre-soak (helps loosen dirt and grime before contact)",
       "Full hand wash (contact wash with microfiber mitt)",
       "Wheels, tires, and rims deep cleaned",
-      "Thorough rinse",
-      "Microfiber towel dry",
-      "Premium tire and plastic dressing applied to restore trim & rubber"
+      "Thorough rinse & microfiber towel dry",
+      "Premium tire and plastic dressing applied to restore trim & rubber",
+      "Specialized front-end bug cleaner treatment (grill, bumpers, side mirrors)",
+      "Premium protective hand-applied paste wax coating & high-shine buffing"
     ]
   },
   {
     name: "Interior Detail",
     price: 80,
     duration: "1.5 hours",
-    description: "Complete interior cleaning including custom vacuuming seats, carpets, and trunk. All surfaces wiped down and detailed (dash, doors, center console). Crevices thoroughly cleared. Weather mat restoration included. All interior glass cleaned for a streak-free finish. Now includes specialized front glass bug cleaner, exterior hand wax, and a complimentary premium air freshener.",
+    description: "Complete interior cleaning including custom vacuuming seats, carpets, and trunk. All surfaces wiped down and detailed (dash, doors, center console). Crevices thoroughly cleared. Weather mat restoration included. All interior glass cleaned for a streak-free finish. Includes a complimentary premium air freshener.",
     features: [
       "Full vacuum (seats, carpets, trunk)",
       "Wipe down all surfaces (dash, doors, center console)",
       "Crevices and tight areas detailed (removes built-up dust and debris)",
       "Weather mat restoration & deep scrubbing",
       "Interior glass cleaned (streak-free finish)",
-      "Specialized bug cleaner application for windshield & front trim",
-      "Protective hand-applied wax for glass & trim gloss",
       "Complementary premium long-lasting air freshener"
     ]
   },
@@ -37,14 +36,11 @@ const SERVICE_TIERS: DetailingService[] = [
     name: "Full Detail",
     price: 120,
     duration: "Under 3 hours",
-    description: "The ultimate bumper-to-bumper reset. Combines both full interior and exterior details. Includes professional bug cleaner treatment, premium protective hand wax, and a complimentary long-lasting premium air freshener of your choice. (Note: prices are estimates and vary depending on vehicle size and dirtiness).",
+    description: "The ultimate bumper-to-bumper reset. Combines both our full interior and exterior details in a single package. Ideal for vehicles needing deep surface restoration inside and out. (Note: prices are estimates and vary depending on vehicle size and dirtiness).",
     features: [
-      "Everything in Exterior Detail",
-      "Everything in Interior Detail",
-      "Specialized front-end bug cleaner treatment (grill, bumpers, side mirrors)",
-      "Premium protective hand-applied paste wax coating & high-shine buffing",
-      "Complementary choice of premium long-lasting air freshener",
-      "Complete inside and out reset for a clean, refreshed, like-new feel"
+      "Everything in Exterior Detail (foam pre-soak, hand wash, trim dressing, bug removal, protective wax)",
+      "Everything in Interior Detail (full vacuum, surface detailed, mat restoration, streak-free glass)",
+      "Complete bumper-to-bumper reset for a clean, refreshed, like-new feel"
     ]
   }
 ];

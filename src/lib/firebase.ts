@@ -10,10 +10,11 @@ import {
 } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import firebaseAppletConfig from "../../firebase-applet-config.json";
 
-// Your custom Firebase configuration loaded securely from environment variables
+// Your custom Firebase configuration loaded securely from environment variables or config file
 const getSanitizedAuthDomain = () => {
-  let domain = (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN || "";
+  let domain = (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain || "";
   if (domain && typeof domain === "string") {
     domain = domain.trim();
     if (domain.endsWith("/")) {
@@ -29,19 +30,35 @@ const getSanitizedAuthDomain = () => {
 };
 
 const firebaseConfig = {
-  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
+  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey,
   authDomain: getSanitizedAuthDomain(),
-  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID
+  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId,
+  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket,
+  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId,
+  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID || firebaseAppletConfig.appId
 };
 
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore
-export const db = getFirestore(app, "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038");
+const getDatabaseId = () => {
+  const envDbId = (import.meta as any).env.VITE_FIREBASE_DATABASE_ID || (import.meta as any).env.FIRESTORE_DATABASE_ID;
+  if (envDbId) return envDbId.trim();
+
+  if (firebaseAppletConfig && typeof firebaseAppletConfig.firestoreDatabaseId === "string") {
+    return firebaseAppletConfig.firestoreDatabaseId.trim();
+  }
+
+  const projectId = (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId || "";
+  if (!projectId || projectId === "undefined" || projectId.includes("pdd643ltb6srk7p2d4lfjr")) {
+    return "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
+  }
+  return undefined; // Fallback to standard (default) database ID
+};
+
+const activeDbId = getDatabaseId();
+export const db = activeDbId ? getFirestore(app, activeDbId) : getFirestore(app);
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);

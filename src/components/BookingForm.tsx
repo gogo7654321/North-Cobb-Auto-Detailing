@@ -185,7 +185,18 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
     }
 
     try {
-      // 1. Call our Google Cloud Function proxy backend to process the automation sequences first so it is never blocked
+      // 1. Try to save directly to Firestore via client-side SDK first (to custom firebase project)
+      let directSaveSucceeded = false;
+      try {
+        const bookingDocRef = doc(db, "bookings", bookingId);
+        await setDoc(bookingDocRef, bookingPayload);
+        directSaveSucceeded = true;
+        console.log("[Client SDK] Booking recorded directly to Firestore successfully.");
+      } catch (clientWriteErr) {
+        console.warn("[Client SDK Warning] Direct write failed, relying entirely on proxy:", clientWriteErr);
+      }
+
+      // 2. Call our Google Cloud Function proxy backend to process the automation sequences first so it is never blocked
       try {
         const response = await fetch("/api/cloud-functions-booking", {
           method: "POST",
@@ -198,27 +209,35 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
         console.error("Cloud function automated notification trigger failed:", cfErr);
       }
 
-      // 2. Save directly to secure firestore via server proxy API with explicit timeout protection
-      await promiseWithTimeout(
-        (async () => {
-          const res = await fetch("/api/bookings", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              id: bookingId,
-              data: bookingPayload
-            })
-          });
-          if (!res.ok) {
-            const errData = await res.json();
-            throw new Error(errData.error || "Failed to create details reservation.");
-          }
-        })(),
-        5000,
-        "FIRESTORE_WRITE_TIMEOUT"
-      );
+      // 3. Save to sync/secure firestore via server proxy API with explicit timeout protection
+      try {
+        await promiseWithTimeout(
+          (async () => {
+            const res = await fetch("/api/bookings", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                id: bookingId,
+                data: bookingPayload
+              })
+            });
+            if (!res.ok) {
+              const errData = await res.json();
+              throw new Error(errData.error || "Failed to create details reservation.");
+            }
+          })(),
+          5000,
+          "FIRESTORE_WRITE_TIMEOUT"
+        );
+      } catch (proxyWriteErr: any) {
+        console.warn("[Server DB Proxy Sync Warning] Proxy write did not resolve: ", proxyWriteErr);
+        // If direct client-side save succeeded, we can proceed as the reservation is saved
+        if (!directSaveSucceeded) {
+          throw proxyWriteErr;
+        }
+      }
       
       setSuccess(true);
       setName("");

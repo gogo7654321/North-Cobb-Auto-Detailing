@@ -98,22 +98,41 @@ export default function AdminPortal() {
     return clean.replace(/\b\w/g, c => c.toUpperCase());
   };
 
-  // Merge Firestore-registered photos and raw Storage files
+  // Merge Firestore-registered photos and raw Storage files, deduplicated with strict uniqueness checks
   const mergedDynamicPhotos = React.useMemo(() => {
-    const list = [...galleryPhotos];
+    const list: any[] = [];
+    const seenUrls = new Set<string>();
+    const seenNames = new Set<string>();
+
+    const addIfUnique = (photo: any) => {
+      const url = (photo.url || "").trim();
+      const name = (photo.name || "").toLowerCase().trim();
+      if (!url || url.startsWith("/")) return; // Skip empty or unresolved local paths
+
+      if (!seenUrls.has(url) && !seenNames.has(name)) {
+        seenUrls.add(url);
+        seenNames.add(name);
+        list.push(photo);
+      }
+    };
+
+    // Add Firestore-registered ones first
+    galleryPhotos.forEach((p) => addIfUnique(p));
     
+    // Add raw storage files if not already represented
     existingStorageFiles.forEach((sFile) => {
+      if (!sFile.url) return;
       const cleanName = sFile.name;
       const formattedName = formatStorageName(cleanName);
       
       const alreadyRepresented = list.some(p => 
         p.storagePath === `gallery/${cleanName}` || 
         p.url === sFile.url ||
-        p.name === formattedName
+        p.name.toLowerCase().trim() === formattedName.toLowerCase().trim()
       );
       
-      if (!alreadyRepresented && sFile.url) {
-        list.push({
+      if (!alreadyRepresented) {
+        addIfUnique({
           id: `storage-${cleanName}`,
           url: sFile.url,
           name: formattedName,
@@ -276,24 +295,48 @@ export default function AdminPortal() {
 
         setMultiUploadStatus(prev => prev ? { ...prev, stage: 'saving' } : null);
 
-        // Save to collection via Proxy API
-        const apiRes = await fetch("/api/gallery-images", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
-          },
-          body: JSON.stringify({
+        // Try direct save via client JS SDK first (to north-cobb-detailing)
+        let directDBSaveSucceeded = false;
+        try {
+          const payload = {
             url: downloadURL,
             name: caption.trim() || file.name,
             caption: caption.trim(),
-            storagePath: storagePath
-          })
-        });
+            storagePath: storagePath,
+            createdAt: new Date().toISOString()
+          };
+          await addDoc(collection(db, "gallery_images"), payload);
+          directDBSaveSucceeded = true;
+          console.log("[Client SDK] Portfolio photo saved directly to Firestore successfully.");
+        } catch (clientDBSaveErr) {
+          console.warn("[Client SDK Warning] Failed direct portfolio registration, attempting API proxy:", clientDBSaveErr);
+        }
 
-        if (!apiRes.ok) {
-          const apiErr = await apiRes.json();
-          throw new Error(apiErr.error || "Proxy save rejected.");
+        // Save to collection via Proxy API (as fallback and local container database synchronization)
+        try {
+          const apiRes = await fetch("/api/gallery-images", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+            },
+            body: JSON.stringify({
+              url: downloadURL,
+              name: caption.trim() || file.name,
+              caption: caption.trim(),
+              storagePath: storagePath
+            })
+          });
+
+          if (!apiRes.ok && !directDBSaveSucceeded) {
+            const apiErr = await apiRes.json();
+            throw new Error(apiErr.error || "Proxy save rejected.");
+          }
+        } catch (apiErr) {
+          console.warn("[Server DB Proxy Sync Warning] Proxy save failed to run: ", apiErr);
+          if (!directDBSaveSucceeded) {
+            throw apiErr;
+          }
         }
 
         successCount++;
@@ -302,22 +345,44 @@ export default function AdminPortal() {
         try {
           const base64Data = await convertToBase64(file);
           
-          const apiRes = await fetch("/api/gallery-images", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
-            },
-            body: JSON.stringify({
+          let directBase64SaveSucceeded = false;
+          try {
+            const payload = {
               url: base64Data,
               name: caption.trim() || file.name,
-              caption: caption.trim()
-            })
-          });
+              caption: caption.trim(),
+              createdAt: new Date().toISOString()
+            };
+            await addDoc(collection(db, "gallery_images"), payload);
+            directBase64SaveSucceeded = true;
+            console.log("[Client SDK] base64 photo saved directly to Firestore.");
+          } catch (clientBase64Err) {
+            console.warn("[Client SDK Warning] Direct base64 save failed, fell back on proxy:", clientBase64Err);
+          }
 
-          if (!apiRes.ok) {
-            const apiErr = await apiRes.json();
-            throw new Error(apiErr.error || "Proxy base64 save rejected.");
+          try {
+            const apiRes = await fetch("/api/gallery-images", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+              },
+              body: JSON.stringify({
+                url: base64Data,
+                name: caption.trim() || file.name,
+                caption: caption.trim()
+              })
+            });
+
+            if (!apiRes.ok && !directBase64SaveSucceeded) {
+              const apiErr = await apiRes.json();
+              throw new Error(apiErr.error || "Proxy base64 save rejected.");
+            }
+          } catch (apiErr) {
+            console.warn("[Server DB Proxy Sync Warning] Proxy base64 failed:", apiErr);
+            if (!directBase64SaveSucceeded) {
+              throw apiErr;
+            }
           }
 
           successCount++;
@@ -761,7 +826,7 @@ export default function AdminPortal() {
     }
   };
 
-  // Subscribe to raw Bookings collection
+  // Subscribe to raw Bookings collection using live real-time query straight from the custom Firestore DB
   useEffect(() => {
     if (!isAdminAuth) {
       setLoading(false);
@@ -769,10 +834,27 @@ export default function AdminPortal() {
     }
 
     setLoading(true);
-    fetchBookings();
-    const interval = setInterval(fetchBookings, 8000); // Check for edits every 8s
+    
+    // Create live snapshot listener straight from Client SDK
+    const q = query(collection(db, "bookings"), orderBy("dateTime", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Booking[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() as Booking });
+      });
+      setBookings(list);
+      setLoading(false);
+    }, (error) => {
+      console.warn("Client subscription to bookings failed (uncreated collections or rules block), enabling API backend polls:", error);
+      // Fallback: poll API as permanent resilient candidate
+      fetchBookings();
+      const interval = setInterval(fetchBookings, 8000);
+      return () => clearInterval(interval);
+    });
 
-    return () => clearInterval(interval);
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
   }, [isAdminAuth]);
 
   // Autopilot processor
@@ -1240,23 +1322,42 @@ export default function AdminPortal() {
         addLog(`- Gmail Alert: Failed to email customer: ${mailError.message}`);
       }
 
-      // 3. Update Firestore database state keys via Proxy API
+      // 3. Update Firestore database state keys via Client SDK & Proxy API
       const updateData: any = { status: "confirmed" };
       if (calendarEventId) {
         updateData.calendarEventId = calendarEventId;
       }
-      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
-        },
-        body: JSON.stringify(updateData)
-      });
-      if (!apiRes.ok) {
-        const apiErr = await apiRes.json();
-        throw new Error(apiErr.error || "Proxy patch status failed.");
+      
+      let directUpdateSucceeded = false;
+      try {
+        const docRef = doc(db, "bookings", booking.id!!);
+        await updateDoc(docRef, updateData);
+        directUpdateSucceeded = true;
+        console.log("[Client SDK] Direct booking confirmation saved to Firestore.");
+      } catch (clientUpdErr) {
+        console.warn("[Client SDK Warning] Direct confirmation state save failed: ", clientUpdErr);
       }
+
+      try {
+        const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+          },
+          body: JSON.stringify(updateData)
+        });
+        if (!apiRes.ok && !directUpdateSucceeded) {
+          const apiErr = await apiRes.json();
+          throw new Error(apiErr.error || "Proxy patch status failed.");
+        }
+      } catch (proxyErr: any) {
+        console.warn("[Server DB Proxy Sync Warning] Proxy booking update did not resolve: ", proxyErr);
+        if (!directUpdateSucceeded) {
+          throw proxyErr;
+        }
+      }
+
       addLog(`Status Updated! [${booking.name}] marked as CONFIRMED in Database.`);
 
     } catch (err: any) {
@@ -1270,18 +1371,36 @@ export default function AdminPortal() {
     if (!confirmed) return;
 
     try {
-      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
-        },
-        body: JSON.stringify({ status: "cancelled" })
-      });
-      if (!apiRes.ok) {
-        const apiErr = await apiRes.json();
-        throw new Error(apiErr.error || "Proxy patch cancel failed.");
+      let directUpdateSucceeded = false;
+      try {
+        const docRef = doc(db, "bookings", booking.id!!);
+        await updateDoc(docRef, { status: "cancelled" });
+        directUpdateSucceeded = true;
+        console.log("[Client SDK] Direct cancel status saved to Firestore.");
+      } catch (clientUpdErr) {
+        console.warn("[Client SDK Warning] Direct cancellation save failed: ", clientUpdErr);
       }
+
+      try {
+        const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+          },
+          body: JSON.stringify({ status: "cancelled" })
+        });
+        if (!apiRes.ok && !directUpdateSucceeded) {
+          const apiErr = await apiRes.json();
+          throw new Error(apiErr.error || "Proxy patch cancel failed.");
+        }
+      } catch (proxyErr: any) {
+        console.warn("[Server DB Proxy Sync Warning] Proxy cancel did not resolve: ", proxyErr);
+        if (!directUpdateSucceeded) {
+          throw proxyErr;
+        }
+      }
+
       addLog(`Booking for ${booking.name} cancelled.`);
     } catch (err: any) {
       addLog(`Failed to cancel booking: ${err.message}`);
@@ -1302,21 +1421,41 @@ export default function AdminPortal() {
     const finalRevenue = isNaN(parsed) ? estimated : parsed;
 
     try {
-      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
-        },
-        body: JSON.stringify({ 
-          status: "completed",
-          actualRevenue: finalRevenue
-        })
-      });
-      if (!apiRes.ok) {
-        const apiErr = await apiRes.json();
-        throw new Error(apiErr.error || "Proxy patch complete failed.");
+      const updateData = { 
+        status: "completed",
+        actualRevenue: finalRevenue
+      };
+
+      let directUpdateSucceeded = false;
+      try {
+        const docRef = doc(db, "bookings", booking.id!!);
+        await updateDoc(docRef, updateData);
+        directUpdateSucceeded = true;
+        console.log("[Client SDK] Direct completion recorded to Firestore.");
+      } catch (clientUpdErr) {
+        console.warn("[Client SDK Warning] Direct completion state save failed: ", clientUpdErr);
       }
+
+      try {
+        const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+          },
+          body: JSON.stringify(updateData)
+        });
+        if (!apiRes.ok && !directUpdateSucceeded) {
+          const apiErr = await apiRes.json();
+          throw new Error(apiErr.error || "Proxy patch complete failed.");
+        }
+      } catch (proxyErr: any) {
+        console.warn("[Server DB Proxy Sync Warning] Proxy complete update did not resolve: ", proxyErr);
+        if (!directUpdateSucceeded) {
+          throw proxyErr;
+        }
+      }
+
       addLog(`Job for ${booking.name} marked as COMPLETED. Actual revenue recorded: $${finalRevenue}`);
     } catch (err: any) {
       addLog(`Failed to complete booking: ${err.message}`);
@@ -1344,17 +1483,36 @@ export default function AdminPortal() {
         }
       }
       
-      const apiRes = await fetch(`/api/bookings/${booking.id}`, {
-        method: "DELETE",
-        headers: {
-          "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
-        }
-      });
-      if (!apiRes.ok) {
-        const apiErr = await apiRes.json();
-        throw new Error(apiErr.error || "Proxy delete booking failed.");
+      let directDeleteSucceeded = false;
+      try {
+        const docRef = doc(db, "bookings", booking.id!!);
+        await deleteDoc(docRef);
+        directDeleteSucceeded = true;
+        addLog(`Deleted booking document directly: ${booking.id!!}`);
+      } catch (clientDelErr) {
+        console.warn("[Client SDK Warning] Direct booking deletion failed: ", clientDelErr);
       }
-      addLog(`Deleted booking document: ${booking.id!!}`);
+
+      try {
+        const apiRes = await fetch(`/api/bookings/${booking.id}`, {
+          method: "DELETE",
+          headers: {
+            "X-Owner-Email": adminUser?.email || "npatel012010@gmail.com"
+          }
+        });
+        if (!apiRes.ok && !directDeleteSucceeded) {
+          const apiErr = await apiRes.json();
+          throw new Error(apiErr.error || "Proxy delete booking failed.");
+        }
+        if (!directDeleteSucceeded) {
+          addLog(`Deleted booking document via proxy API: ${booking.id!!}`);
+        }
+      } catch (err: any) {
+        console.warn("[Server DB Proxy Sync Warning] Proxy booking deletion did not resolve: ", err);
+        if (!directDeleteSucceeded) {
+          addLog(`Delete failed: ${err.message}`);
+        }
+      }
     } catch (err: any) {
       addLog(`Delete failed: ${err.message}`);
     }

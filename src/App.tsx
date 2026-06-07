@@ -17,6 +17,8 @@ import {
   Heart,
   CheckCircle2
 } from "lucide-react";
+import { ref, listAll, getDownloadURL } from "firebase/storage";
+import { storage } from "./lib/firebase";
 import WorkGallery from "./components/WorkGallery";
 import ServicesDetail from "./components/ServicesDetail";
 import BookingForm from "./components/BookingForm";
@@ -26,6 +28,30 @@ export default function App() {
   const [selectedTab, setSelectedTab] = useState<"home" | "services" | "gallery" | "book" | "owner">("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passedService, setPassedService] = useState<string>("");
+  const [heroImgUrl, setHeroImgUrl] = useState<string>("/IMG_0659.jpeg");
+
+  // Fetch true hero image from storage
+  useEffect(() => {
+    const fetchHeroImg = async () => {
+      try {
+        const storageRef = ref(storage, "gallery");
+        const res = await listAll(storageRef);
+        // Find a file ending with "IMG_0659.jpeg"
+        const match = res.items.find((item) => item.name.toLowerCase().endsWith("img_0659.jpeg"));
+        if (match) {
+          const url = await getDownloadURL(match);
+          setHeroImgUrl(url);
+        } else {
+          // If not found, use a beautiful car detailing fallback image from unsplash
+          setHeroImgUrl("https://images.unsplash.com/photo-1601362840469-51e4d8d59085?auto=format&fit=crop&q=80&w=1200");
+        }
+      } catch (err) {
+        console.warn("Failed to fetch hero image from storage:", err);
+        setHeroImgUrl("https://images.unsplash.com/photo-1601362840469-51e4d8d59085?auto=format&fit=crop&q=80&w=1200");
+      }
+    };
+    fetchHeroImg();
+  }, []);
 
   // Secure manual hash routing for owner portal
   useEffect(() => {
@@ -305,7 +331,7 @@ export default function App() {
                     style={{ borderRadius: "18px 2px 18px 2px" }}
                   >
                     <img 
-                      src="/IMG_0659.jpeg" 
+                      src={heroImgUrl} 
                       alt="Arthur and Carson's handiwork" 
                       className="w-full h-auto object-cover max-h-[380px] hover:scale-105 transition-transform duration-500"
                       referrerPolicy="no-referrer"

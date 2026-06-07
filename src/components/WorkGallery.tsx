@@ -109,7 +109,7 @@ export default function WorkGallery({
     scanStorage();
   }, []);
 
-  // Fetch custom dynamic uploads via server API (bypassing Client rules restrictions)
+  // Fetch custom dynamic uploads via direct live subscription (bypassing Client rules restrictions where possible, else fallback to API)
   useEffect(() => {
     const fetchDynamicPhotos = async () => {
       try {
@@ -125,9 +125,24 @@ export default function WorkGallery({
       }
     };
 
-    fetchDynamicPhotos();
-    const interval = setInterval(fetchDynamicPhotos, 12000); // Check for edits every 12s
-    return () => clearInterval(interval);
+    // Try client-side direct live subscription first
+    const q = query(collection(db, "gallery_images"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items: any[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      setDynamicPhotos(items);
+    }, (err) => {
+      console.warn("Client subscription to gallery_images failed, engaging proxy API polling:", err);
+      fetchDynamicPhotos();
+      const interval = setInterval(fetchDynamicPhotos, 12000);
+      return () => clearInterval(interval);
+    });
+
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
   }, []);
 
   const formatStorageName = (fileName: string) => {
@@ -141,10 +156,24 @@ export default function WorkGallery({
     return clean.replace(/\b\w/g, c => c.toUpperCase());
   };
 
-  // Map local static photos to consistent PhotoItem objects
+  const resolveFileUrl = (localPath: string) => {
+    const cleanName = localPath.replace(/^\//, ""); // e.g. "IMG_0659.jpeg"
+    const target = cleanName.toLowerCase();
+    const storageMatch = storagePhotos.find((item) => {
+      const sName = item.name.toLowerCase();
+      return sName === target || sName.endsWith(`_${target}`) || sName.includes(target);
+    });
+    if (storageMatch) {
+      return storageMatch.url;
+    }
+    // If scanning hasn't finished, or it's not custom, return the original
+    return localPath;
+  };
+
+  // Map local static photos to consistent PhotoItem objects, resolved dynamically
   const staticPhotoItems: PhotoItem[] = photos.map((src, i) => ({
     id: `static-${i}`,
-    url: src,
+    url: resolveFileUrl(src),
     name: src
       .replace(/^\//, "")
       .replace(/\.[^/.]+$/, "")
@@ -156,7 +185,7 @@ export default function WorkGallery({
 
   const homePhotoItems: PhotoItem[] = homePhotos.map((src, i) => ({
     id: `home-${i}`,
-    url: src,
+    url: resolveFileUrl(src),
     name: src
       .replace(/^\//, "")
       .replace(/\.[^/.]+$/, "")
@@ -196,10 +225,34 @@ export default function WorkGallery({
     return list;
   }, [dynamicPhotos, storagePhotos]);
 
-  // Merge so dynamic uploads appear dynamically at the front of the queue
-  const displayPhotos = isFullPage 
-    ? [...dynamicPhotoItems, ...staticPhotoItems]
-    : [...dynamicPhotoItems, ...homePhotoItems].slice(0, 4);
+  // Merge so dynamic uploads appear dynamically at the front of the queue, deduplicated and filtered for deleted local assets
+  const displayPhotos = React.useMemo(() => {
+    const rawList = isFullPage 
+      ? [...dynamicPhotoItems, ...staticPhotoItems]
+      : [...dynamicPhotoItems, ...homePhotoItems];
+
+    const uniqueList: PhotoItem[] = [];
+    const seenUrls = new Set<string>();
+    const seenNames = new Set<string>();
+
+    rawList.forEach((item) => {
+      const url = (item.url || "").trim();
+      const lowercaseName = (item.name || "").toLowerCase().trim();
+
+      // Since all local /public images are deleted, anything still starting with "/" is a dead link
+      if (!url || url.startsWith("/")) {
+        return;
+      }
+
+      if (!seenUrls.has(url) && !seenNames.has(lowercaseName)) {
+        seenUrls.add(url);
+        seenNames.add(lowercaseName);
+        uniqueList.push(item);
+      }
+    });
+
+    return isFullPage ? uniqueList : uniqueList.slice(0, 4);
+  }, [dynamicPhotoItems, staticPhotoItems, homePhotoItems, isFullPage]);
 
   const handleOpenLightbox = (index: number) => {
     setActiveLightboxIndex(index);

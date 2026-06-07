@@ -11,18 +11,78 @@ import https from "https";
 dotenv.config();
 
 import fs from "fs";
-// Auto-generate firebase-applet-config.json from environment variables for deployment tools
+
+// Determine project ID dynamically using environment or pre-existing config file
+const getDynamicProjectId = () => {
+  const envProjId = process.env.VITE_FIREBASE_PROJECT_ID;
+  if (envProjId && envProjId !== "undefined") return envProjId.trim();
+
+  try {
+    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, "utf8");
+      const obj = JSON.parse(raw);
+      if (obj.projectId) {
+        return obj.projectId.trim();
+      }
+    }
+  } catch (err) {}
+
+  return "north-cobb-detailing";
+};
+
+const activeProjectId = getDynamicProjectId();
+const isCustomUnauthorisedProject = activeProjectId && activeProjectId.includes("north-cobb-detailing");
+
+// Determine database ID dynamically based on the Firebase Project ID or pre-existing config
+const getDynamicDatabaseId = () => {
+  const envDbId = process.env.VITE_FIREBASE_DATABASE_ID || process.env.FIRESTORE_DATABASE_ID;
+  if (envDbId) return envDbId.trim();
+
+  if (isCustomUnauthorisedProject) {
+    // If the project is north-cobb-detailing, we must use the local container's database ID so the Admin SDK compiles
+    return "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
+  }
+
+  try {
+    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, "utf8");
+      const obj = JSON.parse(raw);
+      if (typeof obj.firestoreDatabaseId === "string") {
+        return obj.firestoreDatabaseId.trim();
+      }
+    }
+  } catch (err) {}
+
+  if (!activeProjectId || activeProjectId === "undefined" || activeProjectId.includes("pdd643ltb6srk7p2d4lfjr")) {
+    return "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
+  }
+  return ""; // Uses (default) database if custom project is configured
+};
+
+const activeDatabaseId = getDynamicDatabaseId();
+
+// Auto-generate firebase-applet-config.json from environment variables for deployment tools, preserving original parameters
 try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-  const authDomainCandidate = process.env.VITE_FIREBASE_AUTH_DOMAIN || `${process.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`;
+  let existingConfig: any = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      existingConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    } catch (_) {}
+  }
+
+  const fallbackProject = activeProjectId;
+  const authDomainCandidate = process.env.VITE_FIREBASE_AUTH_DOMAIN || existingConfig.authDomain || `${fallbackProject}.firebaseapp.com`;
   const configData = {
-    apiKey: process.env.VITE_FIREBASE_API_KEY || "",
+    apiKey: process.env.VITE_FIREBASE_API_KEY || existingConfig.apiKey || "",
     authDomain: authDomainCandidate,
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID || "north-cobb-detailing",
-    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || `${process.env.VITE_FIREBASE_PROJECT_ID}.appspot.com`,
-    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
-    appId: process.env.VITE_FIREBASE_APP_ID || "",
-    firestoreDatabaseId: "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038"
+    projectId: fallbackProject,
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || existingConfig.storageBucket || `${fallbackProject}.appspot.com`,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || existingConfig.messagingSenderId || "",
+    appId: process.env.VITE_FIREBASE_APP_ID || existingConfig.appId || "",
+    firestoreDatabaseId: isCustomUnauthorisedProject ? "" : (activeDatabaseId || existingConfig.firestoreDatabaseId || "")
   };
   fs.writeFileSync(configPath, JSON.stringify(configData, null, 2));
   console.log("[CONFIG] firebase-applet-config.json auto-written successfully.");
@@ -32,11 +92,16 @@ try {
 
 // Initialize Firebase Admin safely
 if (dbAdmin.apps.length === 0) {
-  dbAdmin.initializeApp({
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID || "north-cobb-detailing"
-  });
+  if (activeProjectId && !isCustomUnauthorisedProject) {
+    dbAdmin.initializeApp({
+      projectId: activeProjectId
+    });
+  } else {
+    // Leverage ADC default project ID when accessing custom unconfigured project, avoiding NOT_FOUND
+    dbAdmin.initializeApp();
+  }
 }
-const firestoreDb = getFirestore(dbAdmin.app(), "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038");
+const firestoreDb = activeDatabaseId ? getFirestore(dbAdmin.app(), activeDatabaseId) : getFirestore(dbAdmin.app());
 
 const app = express();
 const PORT = 3000;
