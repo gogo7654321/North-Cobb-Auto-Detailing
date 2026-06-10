@@ -761,6 +761,28 @@ app.get("/api/bookings", async (req, res) => {
   }
 });
 
+// Bookings: Public Busy-slots (Only returns safe time & status indicators for busy slots)
+app.get("/api/busy-slots", async (req, res) => {
+  try {
+    const snapshot = await firestoreDb.collection("bookings").get();
+    const slots: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data.dateTime && (data.status === "pending" || data.status === "confirmed")) {
+        slots.push({
+          id: docSnap.id,
+          dateTime: data.dateTime,
+          status: data.status
+        });
+      }
+    });
+    return res.json(slots);
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Get busy slots failed: ", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch busy slots." });
+  }
+});
+
 // 6. Bookings: Create/Set
 app.post("/api/bookings", async (req, res) => {
   const { id, data } = req.body;

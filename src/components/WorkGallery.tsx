@@ -171,29 +171,51 @@ export default function WorkGallery({
   };
 
   // Map local static photos to consistent PhotoItem objects, resolved dynamically
-  const staticPhotoItems: PhotoItem[] = photos.map((src, i) => ({
-    id: `static-${i}`,
-    url: resolveFileUrl(src),
-    name: src
-      .replace(/^\//, "")
-      .replace(/\.[^/.]+$/, "")
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, c => c.toUpperCase()),
-    caption: "Driveway work proof",
-    isDynamic: false
-  }));
+  const shuffledStaticPhotos = React.useMemo(() => {
+    const arr = [...photos];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, []);
 
-  const homePhotoItems: PhotoItem[] = homePhotos.map((src, i) => ({
-    id: `home-${i}`,
-    url: resolveFileUrl(src),
-    name: src
-      .replace(/^\//, "")
-      .replace(/\.[^/.]+$/, "")
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, c => c.toUpperCase()),
-    caption: "Featured driveway detail",
-    isDynamic: false
-  }));
+  const shuffledHomePhotos = React.useMemo(() => {
+    const arr = [...homePhotos];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, []);
+
+  const staticPhotoItems: PhotoItem[] = React.useMemo(() => {
+    return shuffledStaticPhotos.map((src, i) => ({
+      id: `static-${i}`,
+      url: resolveFileUrl(src),
+      name: src
+        .replace(/^\//, "")
+        .replace(/\.[^/.]+$/, "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase()),
+      caption: "Driveway work proof",
+      isDynamic: false
+    }));
+  }, [shuffledStaticPhotos, storagePhotos]);
+
+  const homePhotoItems: PhotoItem[] = React.useMemo(() => {
+    return shuffledHomePhotos.map((src, i) => ({
+      id: `home-${i}`,
+      url: resolveFileUrl(src),
+      name: src
+        .replace(/^\//, "")
+        .replace(/\.[^/.]+$/, "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase()),
+      caption: "Featured driveway detail",
+      isDynamic: false
+    }));
+  }, [shuffledHomePhotos, storagePhotos]);
 
   // Merge Firestore-registered photos and raw Storage files
   const dynamicPhotoItems: PhotoItem[] = React.useMemo(() => {
@@ -225,7 +247,7 @@ export default function WorkGallery({
     return list;
   }, [dynamicPhotos, storagePhotos]);
 
-  // Merge so dynamic uploads appear dynamically at the front of the queue, deduplicated and filtered for deleted local assets
+  // Merge so dynamic uploads appear dynamically, deduplicated and filtered for deleted local assets
   const displayPhotos = React.useMemo(() => {
     const rawList = isFullPage 
       ? [...dynamicPhotoItems, ...staticPhotoItems]
@@ -251,7 +273,14 @@ export default function WorkGallery({
       }
     });
 
-    return isFullPage ? uniqueList : uniqueList.slice(0, 4);
+    // Strictly randomize the overall deduplicated list of active pics so it is fully shuffled across loads
+    const shuffledList = [...uniqueList];
+    for (let i = shuffledList.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledList[i], shuffledList[j]] = [shuffledList[j], shuffledList[i]];
+    }
+
+    return isFullPage ? shuffledList : shuffledList.slice(0, 4);
   }, [dynamicPhotoItems, staticPhotoItems, homePhotoItems, isFullPage]);
 
   const handleOpenLightbox = (index: number) => {

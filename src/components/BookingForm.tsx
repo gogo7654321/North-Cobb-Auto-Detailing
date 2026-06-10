@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, doc, setDoc } from "firebase/firestore";
+import { collection, doc, setDoc, query, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { BookingServiceType, Booking } from "../types";
 import { 
@@ -50,6 +50,55 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
   const [dateTouched, setDateTouched] = useState(false);
+
+  // Predefined slot values
+  const TIME_SLOTS = [
+    { value: "09:00", label: "Morning (9:00 AM)" },
+    { value: "14:00", label: "Afternoon (2:00 PM)" },
+    { value: "18:00", label: "Evening (6:00 PM)" },
+    { value: "12:00", label: "Other / Custom" }
+  ];
+
+  const [existingBookings, setExistingBookings] = useState<Booking[]>([]);
+
+  // Poll public active slots via API proxy to prevent permission blocks and secure private data
+  useEffect(() => {
+    const fetchSlots = async () => {
+      try {
+        const res = await fetch("/api/busy-slots");
+        if (res.ok) {
+          const list = await res.json();
+          setExistingBookings(list);
+        }
+      } catch (err) {
+        console.warn("Could not retrieve real-time schedule: ", err);
+      }
+    };
+
+    fetchSlots();
+    const interval = setInterval(fetchSlots, 10000); // refresh every 10 seconds to keep fresh
+    return () => clearInterval(interval);
+  }, []);
+
+  const isSlotBooked = (slotValue: string) => {
+    if (!date) return false;
+    if (slotValue === "12:00") return false; // General queue option is never blocked
+    return existingBookings.some((b) => {
+      if (!b.dateTime) return false;
+      const [bDate, bTime] = b.dateTime.split("T");
+      const bHourMin = bTime ? bTime.substring(0, 5) : "";
+      return bDate === date && bHourMin === slotValue;
+    });
+  };
+
+  // Keep chosen slot valid when switches occur
+  useEffect(() => {
+    if (!date) return;
+    if (isSlotBooked(time)) {
+      const firstAvailable = ["09:00", "14:00", "18:00"].find(t => !isSlotBooked(t)) || "12:00";
+      setTime(firstAvailable);
+    }
+  }, [date, existingBookings]);
 
   // Restrict date selection to at least tomorrow (24 hours lead time)
   const getMinDateString = () => {
@@ -137,13 +186,17 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       return;
     }
 
-    // Front-end hours validation
-    const hourNum = parseInt(time.split(":")[0], 10);
-    const minNum = parseInt(time.split(":")[1], 10);
+    // Validate slot selection
+    const allowedTimes = ["09:00", "14:00", "18:00", "12:00"];
+    if (!allowedTimes.includes(time)) {
+      setErrorMsg("Please select a valid time slot.");
+      setLoading(false);
+      return;
+    }
 
-    // Hard temporal lock: no bookings after 18:00 (6:00 PM)
-    if (hourNum < 9 || hourNum > 18 || (hourNum === 18 && minNum > 0)) {
-      setErrorMsg("Booking hours are strictly 9:00 AM to 6:00 PM. Please select a valid slot.");
+    // Double-booking check
+    if (isSlotBooked(time)) {
+      setErrorMsg("The selected time slot is already reserved. Please select another slot.");
       setLoading(false);
       return;
     }
@@ -555,72 +608,90 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
               </div>
             </div>
 
-            {/* Date & Time Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5 text-left">
-                <label className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
-                  <CalendarIcon className="w-3.5 h-3.5 text-[#b45309]" />
-                  Select Date
-                </label>
-                <input
-                  id="booking_input_date"
-                  type="date"
-                  required
-                  min={getMinDateString()}
-                  value={date}
-                  onChange={(e) => {
-                    setDate(e.target.value);
-                    setDateTouched(true);
-                  }}
-                  onBlur={() => setDateTouched(true)}
-                  className={getInputClassName(isDateValid, dateTouched)}
-                />
-                <AnimatePresence>
-                  {dateTouched && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="overflow-hidden"
+            {/* Date Selection */}
+            <div className="space-y-1.5 text-left">
+              <label className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
+                <CalendarIcon className="w-3.5 h-3.5 text-[#b45309]" />
+                Select Date
+              </label>
+              <input
+                id="booking_input_date"
+                type="date"
+                required
+                min={getMinDateString()}
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  setDateTouched(true);
+                }}
+                onBlur={() => setDateTouched(true)}
+                className={getInputClassName(isDateValid, dateTouched)}
+              />
+              <AnimatePresence>
+                {dateTouched && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="overflow-hidden"
+                  >
+                    <p className={`text-[10px] font-sans font-bold flex items-center gap-1 mt-1 uppercase ${
+                      isDateValid ? "text-emerald-700" : "text-rose-500"
+                    }`}>
+                      {isDateValid 
+                        ? "✓ Date selected" 
+                        : date === "" 
+                          ? "⚠ Pick a preferred slot" 
+                          : "⚠ Must be tomorrow or later"}
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Time Slot Picker Grid */}
+            <div className="space-y-2 text-left">
+              <label className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#b45309]" />
+                Select Preferred Time Slot
+              </label>
+              
+              <div className="grid grid-cols-2 gap-2.5">
+                {TIME_SLOTS.map((slot) => {
+                  const booked = isSlotBooked(slot.value);
+                  const selected = time === slot.value;
+                  return (
+                    <button
+                      key={slot.value}
+                      type="button"
+                      disabled={booked}
+                      onClick={() => setTime(slot.value)}
+                      className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-2xl transition-all duration-200 select-none text-center cursor-pointer min-h-[58px] ${
+                        booked
+                          ? "border-zinc-200 bg-zinc-50/75 text-zinc-400 cursor-not-allowed opacity-60 line-through"
+                          : selected
+                            ? "border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-600/15 font-bold"
+                            : "border-[#e6dccf] bg-[#fdfbf8] text-zinc-700 hover:border-amber-400 hover:bg-amber-50/20"
+                      }`}
                     >
-                      <p className={`text-[10px] font-sans font-bold flex items-center gap-1 mt-1 uppercase ${
-                        isDateValid ? "text-emerald-700" : "text-rose-500"
-                      }`}>
-                        {isDateValid 
-                          ? "✓ Date selected" 
-                          : date === "" 
-                            ? "⚠ Pick a preferred slot" 
-                            : "⚠ Must be tomorrow or later"}
-                      </p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                      <span className="text-xs font-semibold">{slot.label}</span>
+                      {booked && (
+                        <span className="absolute -top-1.5 -right-1.5 bg-zinc-400 text-white font-extrabold text-[8px] py-0.5 px-1.5 rounded-full uppercase tracking-wider scale-90">
+                          Reserved
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="space-y-1.5 text-left">
-                <label className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#b45309]" />
-                  Select Time
-                </label>
-                <select
-                  id="booking_input_time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-full block max-w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 min-h-[48px] cursor-pointer"
-                >
-                  <option value="09:00">09:00 AM</option>
-                  <option value="10:00">10:00 AM</option>
-                  <option value="11:00">11:00 AM</option>
-                  <option value="12:00">12:00 PM</option>
-                  <option value="13:00">01:00 PM</option>
-                  <option value="14:00">02:00 PM</option>
-                  <option value="15:00">03:00 PM</option>
-                  <option value="16:00">04:00 PM</option>
-                  <option value="17:00">05:00 PM</option>
-                  <option value="18:00">06:00 PM</option>
-                </select>
-              </div>
+              {time === "12:00" && (
+                <div className="mt-3 text-xs bg-amber-50 text-amber-800 p-3 rounded-xl border border-amber-200/50 flex items-start gap-2 font-medium">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-650 mt-0.5 animate-pulse" />
+                  <span>You will receive a text from Arthur & Carson to book a proper custom time for your detail!</span>
+                </div>
+              )}
             </div>
 
             {/* Notes / Special Requests */}

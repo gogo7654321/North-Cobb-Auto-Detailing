@@ -2109,12 +2109,21 @@ export default function AdminPortal() {
                       </span>
                       <span className="flex items-center gap-1 col-span-2 mt-1 font-serif italic text-amber-950">
                         <Calendar className="w-3.5 h-3.5 text-amber-700" />
-                        {new Date(booking.dateTime).toLocaleString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
+                        {booking.dateTime && (booking.dateTime.endsWith("T12:00:00") || booking.dateTime.endsWith("T12:00")) ? (
+                          <span>
+                            {new Date(booking.dateTime).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric"
+                            })} - <strong className="text-[#b45309] not-italic font-sans text-xs">Custom / Other (Text to Arrange)</strong>
+                          </span>
+                        ) : (
+                          new Date(booking.dateTime).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })
+                        )}
                       </span>
                     </div>
                     {booking.notes && (
