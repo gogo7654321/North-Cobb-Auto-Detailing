@@ -23,34 +23,82 @@ import WorkGallery from "./components/WorkGallery";
 import ServicesDetail from "./components/ServicesDetail";
 import BookingForm from "./components/BookingForm";
 import AdminPortal from "./components/AdminPortal";
+import BeforeAfterSlider from "./components/BeforeAfterSlider";
 
 export default function App() {
   const [selectedTab, setSelectedTab] = useState<"home" | "services" | "gallery" | "book" | "owner">("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passedService, setPassedService] = useState<string>("");
   const [heroImgUrl, setHeroImgUrl] = useState<string>("/IMG_0659.jpeg");
+  const [sliderBeforeUrl, setSliderBeforeUrl] = useState<string>("https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&q=80&w=800");
+  const [sliderAfterUrl, setSliderAfterUrl] = useState<string>("https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&q=80&w=800");
 
-  // Fetch true hero image from storage
+  // Fetch true hero & slider comparison images from storage
   useEffect(() => {
-    const fetchHeroImg = async () => {
+    const fetchHomeImages = async () => {
       try {
         const storageRef = ref(storage, "gallery");
         const res = await listAll(storageRef);
-        // Find a file ending with "IMG_0659.jpeg"
-        const match = res.items.find((item) => item.name.toLowerCase().endsWith("img_0659.jpeg"));
-        if (match) {
-          const url = await getDownloadURL(match);
+        const allItems = res.items;
+
+        // 1. Hero Image
+        const heroMatch = allItems.find((item) => item.name.toLowerCase().endsWith("img_0659.jpeg") || item.name.toLowerCase().endsWith("img_0659.jpg"));
+        if (heroMatch) {
+          const url = await getDownloadURL(heroMatch);
           setHeroImgUrl(url);
         } else {
-          // If not found, use a beautiful car detailing fallback image from unsplash
           setHeroImgUrl("https://images.unsplash.com/photo-1601362840469-51e4d8d59085?auto=format&fit=crop&q=80&w=1200");
         }
+
+        // 2. Before Image (IMG_1154)
+        const beforeMatch = allItems.find((item) => item.name.toLowerCase().includes("1154"));
+        if (beforeMatch) {
+          const url = await getDownloadURL(beforeMatch);
+          setSliderBeforeUrl(url);
+          console.log("Resolved before slider image path in gallery:", beforeMatch.name);
+        } else {
+          // Check root as fallback
+          try {
+            const rootRef = ref(storage);
+            const rootRes = await listAll(rootRef);
+            const rootBeforeMatch = rootRes.items.find((item) => item.name.toLowerCase().includes("1154"));
+            if (rootBeforeMatch) {
+              const url = await getDownloadURL(rootBeforeMatch);
+              setSliderBeforeUrl(url);
+              console.log("Resolved before slider image path in root:", rootBeforeMatch.name);
+            }
+          } catch (e) {
+            console.warn("Could not fetch 1154 from root:", e);
+          }
+        }
+
+        // 3. After Image (IMG_1155)
+        const afterMatch = allItems.find((item) => item.name.toLowerCase().includes("1155"));
+        if (afterMatch) {
+          const url = await getDownloadURL(afterMatch);
+          setSliderAfterUrl(url);
+          console.log("Resolved after slider image path in gallery:", afterMatch.name);
+        } else {
+          // Check root as fallback
+          try {
+            const rootRef = ref(storage);
+            const rootRes = await listAll(rootRef);
+            const rootAfterMatch = rootRes.items.find((item) => item.name.toLowerCase().includes("1155"));
+            if (rootAfterMatch) {
+              const url = await getDownloadURL(rootAfterMatch);
+              setSliderAfterUrl(url);
+              console.log("Resolved after slider image path in root:", rootAfterMatch.name);
+            }
+          } catch (e) {
+            console.warn("Could not fetch 1155 from root:", e);
+          }
+        }
+
       } catch (err) {
-        console.warn("Failed to fetch hero image from storage:", err);
-        setHeroImgUrl("https://images.unsplash.com/photo-1601362840469-51e4d8d59085?auto=format&fit=crop&q=80&w=1200");
+        console.warn("Failed to fetch home images from storage:", err);
       }
     };
-    fetchHeroImg();
+    fetchHomeImages();
   }, []);
 
   // Secure manual hash routing for owner portal
@@ -318,29 +366,23 @@ export default function App() {
 
               </div>
 
-              {/* HERO RIGHT COLUMN: SHOWCASE BRAND PHOTOGRAPHY */}
+              {/* HERO RIGHT COLUMN: SHOWCASE INTERACTIVE BEFORE-AFTER SLIDER */}
               <div className="flex-1 flex items-center justify-center relative animate-in zoom-in-95 duration-350">
                 <div className="relative w-full max-w-lg bg-white border-2 border-[#2e261f] p-3 shadow-md"
                   style={{ borderRadius: "24px 2px 24px 2px" }}
                 >
                   <div className="absolute -top-3.5 -right-3 px-3.5 py-1 bg-amber-100 text-[#b45309] font-sans text-[10px] font-bold tracking-wider border-2 border-[#2e261f] rounded-lg shadow uppercase">
-                    Our Handiwork
+                    Drag Left or Right
                   </div>
                   
-                  <div className="overflow-hidden border border-[#e6dccf]"
-                    style={{ borderRadius: "18px 2px 18px 2px" }}
-                  >
-                    <img 
-                      src={heroImgUrl} 
-                      alt="Arthur and Carson's handiwork" 
-                      className="w-full h-auto object-cover max-h-[380px] hover:scale-105 transition-transform duration-500"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
+                  <BeforeAfterSlider 
+                    beforeUrl={sliderBeforeUrl} 
+                    afterUrl={sliderAfterUrl} 
+                  />
                   
                   <div className="p-4 text-center mt-1">
-                    <span className="text-[10px] font-sans uppercase tracking-widest text-[#b45309] font-black block">Featured Restorative Work</span>
-                    <p className="text-xs text-[#5c544a] italic mt-1 font-serif">Ultra-premium show-car shine hand-crafted right in your driveway.</p>
+                    <span className="text-[10px] font-sans uppercase tracking-widest text-[#b45309] font-black block">Interactive Detailing Comparison</span>
+                    <p className="text-xs text-[#5c544a] italic mt-1 font-serif">Slide to compare our multi-stage restoration work up close.</p>
                   </div>
                 </div>
               </div>
