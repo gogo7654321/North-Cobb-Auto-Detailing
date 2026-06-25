@@ -10,7 +10,11 @@ import {
 } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import firebaseAppletConfig from "../../firebase-applet-config.json";
+
+// Safe optional import of firebase-applet-config.json using Vite's glob pattern
+// This avoids compile-time failures if the config file is deleted or excluded from source control.
+const configs = (import.meta as any).glob("../../firebase-applet-config.json", { eager: true });
+const firebaseAppletConfig = ((configs["../../firebase-applet-config.json"] as any)?.default || {}) as any;
 
 // Your custom Firebase configuration loaded securely from environment variables or config file
 const getSanitizedAuthDomain = () => {
@@ -32,7 +36,7 @@ const getSanitizedAuthDomain = () => {
 const firebaseConfig = {
   apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey,
   authDomain: getSanitizedAuthDomain(),
-  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId,
+  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId || "north-cobb-detailing",
   storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket,
   messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId,
   appId: (import.meta as any).env.VITE_FIREBASE_APP_ID || firebaseAppletConfig.appId
@@ -51,7 +55,7 @@ const getDatabaseId = () => {
   }
 
   const projectId = (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId || "";
-  if (!projectId || projectId === "undefined" || projectId.includes("pdd643ltb6srk7p2d4lfjr")) {
+  if (!projectId || projectId === "undefined" || projectId.includes("pdd643ltb6srk7p2d4lfjr") || projectId === "north-cobb-detailing") {
     return "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
   }
   return undefined; // Fallback to standard (default) database ID

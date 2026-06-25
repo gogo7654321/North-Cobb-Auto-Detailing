@@ -38,6 +38,12 @@ try {
   console.error("Failed to parse firebase-applet-config.json: ", e);
 }
 
+// Ensure proper fallback to the active Firestore Database ID for production
+if (!activeDatabaseId && (activeProjectId === "north-cobb-detailing" || !activeProjectId)) {
+  activeDatabaseId = "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
+  console.log(`[Firebase Admin Server] Using fallback Database: ${activeDatabaseId}`);
+}
+
 // Initialize Firebase Admin safely
 if (dbAdmin.apps.length === 0) {
   if (activeProjectId) {
