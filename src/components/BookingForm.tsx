@@ -123,10 +123,10 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   // Get service price mapping to display and write
   const getPrice = (type: BookingServiceType) => {
     switch (type) {
-      case "Exterior Detail": return 50;
-      case "Interior Detail": return 80;
-      case "Full Detail": return 120;
-      default: return 50;
+      case "Exterior Detail": return 45;
+      case "Interior Detail": return 65;
+      case "Full Detail": return 100;
+      default: return 45;
     }
   };
 
@@ -238,29 +238,38 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
     }
 
     try {
-      // 1. Try to save directly to Firestore via client-side SDK first (to custom firebase project)
+      // 1. Try to save directly to Firestore via client-side SDK first with a fast timeout (to custom firebase project)
       let directSaveSucceeded = false;
       try {
         const bookingDocRef = doc(db, "bookings", bookingId);
-        await setDoc(bookingDocRef, bookingPayload);
+        await promiseWithTimeout(
+          setDoc(bookingDocRef, bookingPayload),
+          2000,
+          "CLIENT_WRITE_TIMEOUT"
+        );
         directSaveSucceeded = true;
         console.log("[Client SDK] Booking recorded directly to Firestore successfully.");
       } catch (clientWriteErr) {
-        console.warn("[Client SDK Warning] Direct write failed, relying entirely on proxy:", clientWriteErr);
+        console.warn("[Client SDK Warning] Direct write failed or timed out, relying entirely on proxy:", clientWriteErr);
       }
 
-      // 2. Call our Google Cloud Function proxy backend to process the automation sequences first so it is never blocked
-      try {
-        const response = await fetch("/api/cloud-functions-booking", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bookingId, bookingData: bookingPayload })
+      // 2. Call our Google Cloud Function proxy backend to process the automation sequences in the background (Non-blocking)
+      fetch("/api/cloud-functions-booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId, bookingData: bookingPayload })
+      })
+        .then(async (response) => {
+          if (response.ok) {
+            const cfData = await response.json();
+            console.log("[Cloud Function booking sequence active]:", cfData);
+          } else {
+            console.warn("Cloud function responded with error status:", response.status);
+          }
+        })
+        .catch((cfErr) => {
+          console.error("Cloud function automated notification trigger background error:", cfErr);
         });
-        const cfData = await response.json();
-        console.log("[Cloud Function booking sequence active]:", cfData);
-      } catch (cfErr) {
-        console.error("Cloud function automated notification trigger failed:", cfErr);
-      }
 
       // 3. Save to sync/secure firestore via server proxy API with explicit timeout protection
       try {

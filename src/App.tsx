@@ -30,8 +30,8 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passedService, setPassedService] = useState<string>("");
   const [heroImgUrl, setHeroImgUrl] = useState<string>("/IMG_0659.jpeg");
-  const [sliderBeforeUrl, setSliderBeforeUrl] = useState<string>("https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&q=80&w=800");
-  const [sliderAfterUrl, setSliderAfterUrl] = useState<string>("https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&q=80&w=800");
+  const [sliderBeforeUrl, setSliderBeforeUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1154.JPEG?alt=media");
+  const [sliderAfterUrl, setSliderAfterUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1155.JPEG?alt=media");
 
   // Fetch true hero & slider comparison images from storage
   useEffect(() => {
@@ -359,7 +359,7 @@ export default function App() {
                     <span className="text-[10px] text-zinc-500 font-sans uppercase tracking-wider font-bold">Fast Turnaround</span>
                   </div>
                   <div>
-                    <span className="text-xl font-serif font-black text-[#2e261f] block">$50 - $120</span>
+                    <span className="text-xl font-serif font-black text-[#2e261f] block">$45 - $100</span>
                     <span className="text-[10px] text-zinc-500 font-sans uppercase tracking-wider font-bold">Estimated Base Rates</span>
                   </div>
                 </div>

@@ -1,106 +1,42 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global safety net (Default Close policy)
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Helper Functions ---
-    
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isVerifiedOwner() {
-      return isSignedIn() &&
-             (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    function isValidBooking(data) {
-      return data.keys().hasAll(['name', 'phone', 'email', 'service', 'price', 'dateTime', 'status', 'createdAt']) &&
-             data.size() >= 8 && data.size() <= 12 &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
-             data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 32 &&
-             data.email is string && data.email.size() <= 256 &&
-             data.service is string && data.service.size() <= 64 &&
-             (data.service == 'Exterior Detail' || data.service == 'Interior Detail' || data.service == 'Full Detail') &&
-             data.price is number && (
-               (data.service == 'Exterior Detail' && data.price == 50) ||
-               (data.service == 'Interior Detail' && data.price == 80) ||
-               (data.service == 'Full Detail' && data.price == 120)
-             ) &&
-             data.dateTime is string && data.dateTime.size() <= 64 &&
-             data.status is string && data.status.size() <= 32 && (data.status == 'pending' || data.status == 'confirmed' || data.status == 'cancelled' || data.status == 'completed') &&
-             data.createdAt is string && data.createdAt.size() <= 64;
-    }
-
-    // --- Bookings Collection Rules ---
     match /bookings/{bookingId} {
-      allow get, list: if isVerifiedOwner();
-      allow delete: if isVerifiedOwner() && 
-                       isValidId(bookingId) && 
-                       existing().status != 'completed';
-
-      allow create: if isValidId(bookingId) &&
-                       isValidBooking(incoming()) &&
-                       incoming().status == 'pending' &&
-                       timestamp(incoming().dateTime + 'Z') >= request.time &&
-                       timestamp(incoming().createdAt) <= request.time + duration.value(5, 'm') &&
-                       timestamp(incoming().createdAt) >= request.time - duration.value(5, 'm');
-
-      allow update: if isVerifiedOwner() &&
-                       isValidId(bookingId) &&
-                       existing().status != 'completed' &&
-                       isValidBooking(incoming()) &&
-                       incoming().createdAt == existing().createdAt &&
+      allow read, write: if request.auth != null && 
+                            (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
+      
+      allow create: if request.resource.data.get('status', '') == 'pending' &&
+                       request.resource.data.get('name', '') != '' &&
+                       request.resource.data.get('phone', '') != '' &&
+                       request.resource.data.get('email', '') != '' &&
+                       request.resource.data.get('dateTime', '') != '' &&
+                       request.resource.data.get('service', '') in ['Exterior Detail', 'Interior Detail', 'Full Detail'] &&
                        (
-                         incoming().diff(existing()).affectedKeys().hasOnly(['status']) ||
-                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'actualRevenue']) ||
-                         incoming().diff(existing()).affectedKeys().hasOnly(['calendarEventId']) ||
-                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'calendarEventId'])
+                         (request.resource.data.get('service', '') == 'Exterior Detail' && request.resource.data.get('price', 0) == 45) ||
+                         (request.resource.data.get('service', '') == 'Interior Detail' && request.resource.data.get('price', 0) == 65) ||
+                         (request.resource.data.get('service', '') == 'Full Detail' && request.resource.data.get('price', 0) == 100)
                        );
     }
 
-    // --- Admin Config Collection Rules ---
     match /admin_config/{docId} {
-      allow read, write: if isVerifiedOwner() && isValidId(docId);
+      allow read, write: if request.auth != null && 
+                            (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
     }
 
-    // --- Helper for email ID validation ---
-    function isValidEmailId(id) {
-      return id is string && id.size() <= 256;
+    match /gallery_images/{imgId} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+                      (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
     }
 
-    // --- Helper for gallery image validation ---
-    function isValidGalleryImage(data) {
-      return data.keys().hasAll(['url', 'name', 'createdAt']) &&
-             data.url is string && data.url.size() > 0 &&
-             data.name is string && data.name.size() > 0 &&
-             data.createdAt is string;
-    }
-
-    // --- Gallery Images Rules ---
-    match /gallery_images/{imageId} {
-      allow read: if true; // Public access
-      allow write: if isVerifiedOwner() && isValidId(imageId) && (request.method == 'delete' || isValidGalleryImage(incoming()));
-    }
-
-    // --- Authenticated Owners Rules ---
-    match /authenticated_owners/{email} {
-      allow read, write: if isVerifiedOwner() && isValidEmailId(email);
+    match /authenticated_owners/{ownerId} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+                      (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
     }
   }
 }

@@ -12,92 +12,39 @@ dotenv.config();
 
 import fs from "fs";
 
-// Determine project ID dynamically using environment or pre-existing config file
-const getDynamicProjectId = () => {
-  const envProjId = process.env.VITE_FIREBASE_PROJECT_ID;
-  if (envProjId && envProjId !== "undefined") return envProjId.trim();
+// Read configurations directly from the provisioned firebase-applet-config.json
+let activeProjectId = "north-cobb-detailing";
+let activeDatabaseId = "";
 
-  try {
-    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-    if (fs.existsSync(configPath)) {
-      const raw = fs.readFileSync(configPath, "utf8");
-      const obj = JSON.parse(raw);
-      if (obj.projectId) {
-        return obj.projectId.trim();
-      }
-    }
-  } catch (err) {}
-
-  return "north-cobb-detailing";
-};
-
-const activeProjectId = getDynamicProjectId();
-const isCustomUnauthorisedProject = activeProjectId && activeProjectId.includes("north-cobb-detailing");
-
-// Determine database ID dynamically based on the Firebase Project ID or pre-existing config
-const getDynamicDatabaseId = () => {
-  const envDbId = process.env.VITE_FIREBASE_DATABASE_ID || process.env.FIRESTORE_DATABASE_ID;
-  if (envDbId) return envDbId.trim();
-
-  if (isCustomUnauthorisedProject) {
-    // If the project is north-cobb-detailing, we must use the local container's database ID so the Admin SDK compiles
-    return "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
-  }
-
-  try {
-    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-    if (fs.existsSync(configPath)) {
-      const raw = fs.readFileSync(configPath, "utf8");
-      const obj = JSON.parse(raw);
-      if (typeof obj.firestoreDatabaseId === "string") {
-        return obj.firestoreDatabaseId.trim();
-      }
-    }
-  } catch (err) {}
-
-  if (!activeProjectId || activeProjectId === "undefined" || activeProjectId.includes("pdd643ltb6srk7p2d4lfjr")) {
-    return "ai-studio-156f4116-40a7-4fe1-9027-3f4cb246d038";
-  }
-  return ""; // Uses (default) database if custom project is configured
-};
-
-const activeDatabaseId = getDynamicDatabaseId();
-
-// Auto-generate firebase-applet-config.json from environment variables for deployment tools, preserving original parameters
 try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-  let existingConfig: any = {};
   if (fs.existsSync(configPath)) {
-    try {
-      existingConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    } catch (_) {}
+    const configData = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    if (configData.projectId) activeProjectId = configData.projectId.trim();
+    if (configData.firestoreDatabaseId) activeDatabaseId = configData.firestoreDatabaseId.trim();
+    console.log(`[Firebase Admin Server] Loaded config from file: Project=${activeProjectId}, Database=${activeDatabaseId}`);
+  } else {
+    const envProjId = process.env.VITE_FIREBASE_PROJECT_ID;
+    if (envProjId && envProjId !== "undefined") {
+      activeProjectId = envProjId.trim();
+    }
+    const envDbId = process.env.VITE_FIREBASE_DATABASE_ID || process.env.FIRESTORE_DATABASE_ID;
+    if (envDbId && envDbId !== "undefined") {
+      activeDatabaseId = envDbId.trim();
+    }
+    console.log(`[Firebase Admin Server] Loaded config from env: Project=${activeProjectId}, Database=${activeDatabaseId}`);
   }
-
-  const fallbackProject = activeProjectId;
-  const authDomainCandidate = process.env.VITE_FIREBASE_AUTH_DOMAIN || existingConfig.authDomain || `${fallbackProject}.firebaseapp.com`;
-  const configData = {
-    apiKey: process.env.VITE_FIREBASE_API_KEY || existingConfig.apiKey || "",
-    authDomain: authDomainCandidate,
-    projectId: fallbackProject,
-    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || existingConfig.storageBucket || `${fallbackProject}.appspot.com`,
-    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || existingConfig.messagingSenderId || "",
-    appId: process.env.VITE_FIREBASE_APP_ID || existingConfig.appId || "",
-    firestoreDatabaseId: isCustomUnauthorisedProject ? "" : (activeDatabaseId || existingConfig.firestoreDatabaseId || "")
-  };
-  fs.writeFileSync(configPath, JSON.stringify(configData, null, 2));
-  console.log("[CONFIG] firebase-applet-config.json auto-written successfully.");
 } catch (e) {
-  console.error("Failed to write firebase-applet-config.json: ", e);
+  console.error("Failed to parse firebase-applet-config.json: ", e);
 }
 
 // Initialize Firebase Admin safely
 if (dbAdmin.apps.length === 0) {
-  if (activeProjectId && !isCustomUnauthorisedProject) {
+  if (activeProjectId) {
     dbAdmin.initializeApp({
       projectId: activeProjectId
     });
   } else {
-    // Leverage ADC default project ID when accessing custom unconfigured project, avoiding NOT_FOUND
     dbAdmin.initializeApp();
   }
 }
@@ -167,6 +114,22 @@ async function sendSmtpEmail(options: {
 
   throw new Error(`SMTP authentication failed for all potential account configurations (${candidateList.join(", ")}). Last SMTP error: ${lastError?.message || lastError}`);
 }
+
+// Debug Firebase Environment Variables to resolve project and database configuration discrepancy
+app.get("/api/debug-firebase-env", (req, res) => {
+  const envs: Record<string, string> = {};
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("VITE_") || key.includes("FIREBASE") || key.includes("FIRESTORE") || key.includes("PROJECT")) {
+      envs[key] = process.env[key] || "";
+    }
+  }
+  res.json({
+    envs,
+    activeProjectId,
+    activeDatabaseId,
+    isCustomUnauthorisedProject: false
+  });
+});
 
 // Cloud Function equivalent API for real-time automated bookings
 app.post("/api/cloud-functions-booking", async (req, res) => {
@@ -642,7 +605,7 @@ async function verifyOwnerEmailHeader(req: express.Request): Promise<boolean> {
       return true;
     }
   } catch (err) {
-    console.error("Failed to verify owner email from DB: ", err);
+    console.error("Failed to verify owner email from DB:", err);
   }
   return false;
 }
@@ -659,27 +622,30 @@ app.post("/api/save-owner-token", async (req, res) => {
     return res.status(403).json({ error: "Unauthorized email." });
   }
 
+  const oauthData = {
+    accessToken: token,
+    updatedAt: new Date().toISOString(),
+    email: email
+  };
+
+  const ownerData = {
+    email: email,
+    accessToken: token,
+    updatedAt: new Date().toISOString(),
+    hasToken: true
+  };
+
   try {
     if (email === "northcobbdetailing@gmail.com") {
-      await firestoreDb.collection("admin_config").doc("oauth").set({
-        accessToken: token,
-        updatedAt: new Date().toISOString(),
-        email: email
-      });
+      await firestoreDb.collection("admin_config").doc("oauth").set(oauthData);
       console.log(`[Server DB Proxy] Stored OAuth token for northcobbdetailing@gmail.com`);
     }
 
-    await firestoreDb.collection("authenticated_owners").doc(email).set({
-      email: email,
-      accessToken: token,
-      updatedAt: new Date().toISOString(),
-      hasToken: true
-    });
-
+    await firestoreDb.collection("authenticated_owners").doc(email).set(ownerData);
     return res.json({ success: true });
   } catch (err: any) {
-    console.error("[Server DB Proxy] Save Owner Token failed: ", err);
-    return res.status(500).json({ error: err.message || "Failed to save owner token." });
+    console.error("[Server DB Proxy] Save Owner Token Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save token to database." });
   }
 });
 
@@ -696,8 +662,8 @@ app.get("/api/gallery-images", async (req, res) => {
     });
     return res.json(items);
   } catch (err: any) {
-    console.error("[Server DB Proxy] Get Gallery Images failed: ", err);
-    return res.status(500).json({ error: err.message || "Failed to fetch gallery images." });
+    console.error("[Server DB Proxy] Get Gallery Images Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to retrieve gallery images." });
   }
 });
 
@@ -712,17 +678,19 @@ app.post("/api/gallery-images", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields (url, name)." });
   }
 
+  const imageData = {
+    url,
+    name,
+    caption: caption || "Migrated Driveway Portfolio Asset",
+    storagePath: storagePath || "",
+    createdAt: new Date().toISOString()
+  };
+
   try {
-    const r = await firestoreDb.collection("gallery_images").add({
-      url,
-      name,
-      caption: caption || "Migrated Driveway Portfolio Asset",
-      storagePath: storagePath || "",
-      createdAt: new Date().toISOString()
-    });
+    const r = await firestoreDb.collection("gallery_images").add(imageData);
     return res.json({ success: true, id: r.id });
   } catch (err: any) {
-    console.error("[Server DB Proxy] Add Gallery Image failed: ", err);
+    console.error("[Server DB Proxy] Add Gallery Image Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to add gallery image." });
   }
 });
@@ -738,7 +706,7 @@ app.delete("/api/gallery-images/:id", async (req, res) => {
     await firestoreDb.collection("gallery_images").doc(id).delete();
     return res.json({ success: true });
   } catch (err: any) {
-    console.error("[Server DB Proxy] Delete Gallery Image failed: ", err);
+    console.error("[Server DB Proxy] Delete Gallery Image Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to delete gallery image." });
   }
 });
@@ -756,8 +724,8 @@ app.get("/api/bookings", async (req, res) => {
     });
     return res.json(items);
   } catch (err: any) {
-    console.error("[Server DB Proxy] Get Bookings failed: ", err);
-    return res.status(500).json({ error: err.message || "Failed to fetch bookings." });
+    console.error("[Server DB Proxy] Get Bookings Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to retrieve bookings." });
   }
 });
 
@@ -778,8 +746,8 @@ app.get("/api/busy-slots", async (req, res) => {
     });
     return res.json(slots);
   } catch (err: any) {
-    console.error("[Server DB Proxy] Get busy slots failed: ", err);
-    return res.status(500).json({ error: err.message || "Failed to fetch busy slots." });
+    console.error("[Server DB Proxy] Get busy slots Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to retrieve busy slots." });
   }
 });
 
@@ -799,8 +767,8 @@ app.post("/api/bookings", async (req, res) => {
       return res.json({ success: true, id: r.id });
     }
   } catch (err: any) {
-    console.error("[Server DB Proxy] Create Booking failed: ", err);
-    return res.status(500).json({ error: err.message || "Failed to compile booking." });
+    console.error("[Server DB Proxy] Create Booking Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to create booking." });
   }
 });
 
@@ -820,7 +788,7 @@ app.patch("/api/bookings/:id", async (req, res) => {
     await firestoreDb.collection("bookings").doc(id).update(updates);
     return res.json({ success: true });
   } catch (err: any) {
-    console.error("[Server DB Proxy] Patch Booking failed: ", err);
+    console.error("[Server DB Proxy] Patch Booking Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to update booking." });
   }
 });
@@ -836,7 +804,7 @@ app.delete("/api/bookings/:id", async (req, res) => {
     await firestoreDb.collection("bookings").doc(id).delete();
     return res.json({ success: true });
   } catch (err: any) {
-    console.error("[Server DB Proxy] Delete Booking failed: ", err);
+    console.error("[Server DB Proxy] Delete Booking Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to delete booking." });
   }
 });
