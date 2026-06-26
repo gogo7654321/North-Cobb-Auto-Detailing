@@ -57,7 +57,7 @@ if (dbAdmin.apps.length === 0) {
 const firestoreDb = activeDatabaseId ? getFirestore(dbAdmin.app(), activeDatabaseId) : getFirestore(dbAdmin.app());
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.NODE_ENV === "production" ? (process.env.PORT ? parseInt(process.env.PORT, 10) : 8080) : 3000;
 
 app.use(express.json());
 
