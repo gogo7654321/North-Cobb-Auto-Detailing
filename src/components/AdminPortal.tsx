@@ -28,6 +28,7 @@ import {
   listAll
 } from "firebase/storage";
 import { Booking, BookingStatusType } from "../types";
+import BeforeAfterSlider from "./BeforeAfterSlider";
 import { 
   Lock, 
   Unlock, 
@@ -60,8 +61,78 @@ export default function AdminPortal() {
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isInIframe, setIsInIframe] = useState(false);
-  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'gallery'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'gallery' | 'slider' | 'schedule'>('active');
   const [showAuthWarning, setShowAuthWarning] = useState(false);
+
+  // Schedule Blocking States
+  const [blockedSlots, setBlockedSlots] = useState<any[]>([]);
+  const [loadingBlockedSlots, setLoadingBlockedSlots] = useState(false);
+  const [blockDate, setBlockDate] = useState("");
+  const [blockTimeSlot, setBlockTimeSlot] = useState("all");
+  const [blockReason, setBlockReason] = useState("");
+  const [creatingBlock, setCreatingBlock] = useState(false);
+  const [blockSuccess, setBlockSuccess] = useState("");
+  const [blockError, setBlockError] = useState("");
+
+  // Slider Alignment States
+  const [sliderBeforeUrl, setSliderBeforeUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1154.JPEG?alt=media");
+  const [sliderAfterUrl, setSliderAfterUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1155.JPEG?alt=media");
+  const [alignment, setAlignment] = useState({
+    beforeScale: 1.0,
+    beforeX: 0,
+    beforeY: 0,
+    afterScale: 1.15,
+    afterX: 0,
+    afterY: -5
+  });
+  const [savingAlignment, setSavingAlignment] = useState(false);
+  const [alignmentSuccess, setAlignmentSuccess] = useState("");
+  const [alignmentError, setAlignmentError] = useState("");
+
+  // Load slider alignment config inside AdminPortal
+  useEffect(() => {
+    const fetchAlignment = async () => {
+      try {
+        const docRef = doc(db, "gallery_images", "slider_alignment");
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          setAlignment({
+            beforeScale: typeof data.beforeScale === 'number' ? data.beforeScale : 1.0,
+            beforeX: typeof data.beforeX === 'number' ? data.beforeX : 0,
+            beforeY: typeof data.beforeY === 'number' ? data.beforeY : 0,
+            afterScale: typeof data.afterScale === 'number' ? data.afterScale : 1.15,
+            afterX: typeof data.afterX === 'number' ? data.afterX : 0,
+            afterY: typeof data.afterY === 'number' ? data.afterY : -5,
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load slider alignment config: ", e);
+      }
+    };
+
+    const fetchSliderImages = async () => {
+      try {
+        const storageRef = ref(storage, "gallery");
+        const res = await listAll(storageRef);
+        const beforeMatch = res.items.find((item) => item.name.toLowerCase().includes("1154"));
+        if (beforeMatch) {
+          const url = await getDownloadURL(beforeMatch);
+          setSliderBeforeUrl(url);
+        }
+        const afterMatch = res.items.find((item) => item.name.toLowerCase().includes("1155"));
+        if (afterMatch) {
+          const url = await getDownloadURL(afterMatch);
+          setSliderAfterUrl(url);
+        }
+      } catch (err) {
+        console.warn("Could not load slider image URLs in AdminPortal: ", err);
+      }
+    };
+
+    fetchAlignment();
+    fetchSliderImages();
+  }, []);
 
   // Gallery Management States
   const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
@@ -117,7 +188,7 @@ export default function AdminPortal() {
     };
 
     // Add Firestore-registered ones first
-    galleryPhotos.forEach((p) => addIfUnique(p));
+    galleryPhotos.filter((p) => p.id !== "slider_alignment").forEach((p) => addIfUnique(p));
     
     // Add raw storage files if not already represented
     existingStorageFiles.forEach((sFile) => {
@@ -205,6 +276,125 @@ export default function AdminPortal() {
 
     return () => clearInterval(interval);
   }, [isAdminAuth]);
+
+  // Schedule Blocking Methods
+  const fetchBlockedSlots = async () => {
+    try {
+      setLoadingBlockedSlots(true);
+      const response = await fetch("/api/blocked-slots");
+      if (response.ok) {
+        const data = await response.json();
+        setBlockedSlots(data);
+      }
+    } catch (err) {
+      console.error("Failed to load blocked slots: ", err);
+    } finally {
+      setLoadingBlockedSlots(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdminAuth && activeTab === 'schedule') {
+      fetchBlockedSlots();
+    }
+  }, [isAdminAuth, activeTab]);
+
+  const handleCreateBlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!blockDate || !blockTimeSlot) {
+      setBlockError("Please select both a date and a time slot option.");
+      return;
+    }
+
+    setCreatingBlock(true);
+    setBlockError("");
+    setBlockSuccess("");
+
+    const blockId = `${blockDate}_${blockTimeSlot}`;
+    const payload = {
+      date: blockDate,
+      timeSlot: blockTimeSlot,
+      reason: blockReason.trim() || "Unavailable",
+      createdAt: new Date().toISOString(),
+      createdBy: adminUser?.email || "northcobbdetailing@gmail.com"
+    };
+
+    // 1. Try to save directly to Firestore via client SDK
+    let clientSaveOk = false;
+    try {
+      await setDoc(doc(db, "blocked_slots", blockId), payload);
+      clientSaveOk = true;
+      console.log("[Client SDK] Blocked slot saved directly to Firestore.");
+    } catch (err) {
+      console.warn("[Client SDK Warning] Failed to save blocked slot directly:", err);
+    }
+
+    // 2. Try proxy server API
+    try {
+      const response = await fetch("/api/blocked-slots", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "northcobbdetailing@gmail.com"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok && !clientSaveOk) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to block slot via proxy.");
+      }
+
+      setBlockSuccess(`Successfully blocked slot on ${blockDate} (${blockTimeSlot === 'all' ? 'All Day' : blockTimeSlot})!`);
+      setBlockDate("");
+      setBlockTimeSlot("all");
+      setBlockReason("");
+      fetchBlockedSlots();
+    } catch (err: any) {
+      setBlockError(err.message || "An unexpected error occurred while blocking slot.");
+    } finally {
+      setCreatingBlock(false);
+    }
+  };
+
+  const handleDeleteBlock = async (block: any) => {
+    if (!window.confirm(`Are you sure you want to unblock ${block.date} (${block.timeSlot === 'all' ? 'All Day' : block.timeSlot})?`)) {
+      return;
+    }
+
+    setBlockError("");
+    setBlockSuccess("");
+
+    // 1. Delete from client Firestore
+    let clientDeleteOk = false;
+    try {
+      await deleteDoc(doc(db, "blocked_slots", block.id || `${block.date}_${block.timeSlot}`));
+      clientDeleteOk = true;
+      console.log("[Client SDK] Blocked slot deleted directly from Firestore.");
+    } catch (err) {
+      console.warn("[Client SDK Warning] Failed to delete blocked slot directly:", err);
+    }
+
+    // 2. Delete from proxy server API
+    try {
+      const response = await fetch(`/api/blocked-slots/${block.id || `${block.date}_${block.timeSlot}`}`, {
+        method: "DELETE",
+        headers: {
+          "X-Owner-Email": adminUser?.email || "northcobbdetailing@gmail.com"
+        }
+      });
+
+      if (!response.ok && !clientDeleteOk) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to delete block via proxy.");
+      }
+
+      setBlockSuccess(`Successfully unblocked slot.`);
+      fetchBlockedSlots();
+    } catch (err: any) {
+      setBlockError(err.message || "Failed to delete block.");
+    }
+  };
 
   const handleAddMultipleFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) {
@@ -482,6 +672,30 @@ export default function AdminPortal() {
       }, 800);
     } catch (err: any) {
       setGalleryError(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  const handleSaveAlignment = async () => {
+    setSavingAlignment(true);
+    setAlignmentSuccess("");
+    setAlignmentError("");
+    try {
+      const docRef = doc(db, "gallery_images", "slider_alignment");
+      await setDoc(docRef, {
+        beforeScale: alignment.beforeScale,
+        beforeX: alignment.beforeX,
+        beforeY: alignment.beforeY,
+        afterScale: alignment.afterScale,
+        afterX: alignment.afterX,
+        afterY: alignment.afterY,
+        updatedAt: new Date().toISOString()
+      });
+      setAlignmentSuccess("Image slider alignment saved successfully!");
+    } catch (err: any) {
+      console.error("Failed to save slider alignment: ", err);
+      setAlignmentError("Failed to save: " + (err.message || err));
+    } finally {
+      setSavingAlignment(false);
     }
   };
 
@@ -1774,9 +1988,9 @@ export default function AdminPortal() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dashed border-[#e6dccf] pb-2">
             <h5 className="text-xs font-bold text-[#2e261f] font-mono tracking-widest uppercase">
-              {activeTab === 'active' ? "Active Schedule Queue" : activeTab === 'completed' ? "Completed Jobs Record" : "Driveway Portfolio Manager"}
+              {activeTab === 'active' ? "Active Schedule Queue" : activeTab === 'completed' ? "Completed Jobs Record" : activeTab === 'gallery' ? "Driveway Portfolio Manager" : "Before/After Slider Calibration"}
             </h5>
-            <div className="flex bg-[#faf8f5] border border-[#e6dccf] p-0.5 rounded-lg gap-1 self-start">
+            <div className="flex bg-[#faf8f5] border border-[#e6dccf] p-0.5 rounded-lg gap-1 self-start flex-wrap">
               <button
                 id="active_tab_btn"
                 onClick={() => setActiveTab('active')}
@@ -1809,6 +2023,28 @@ export default function AdminPortal() {
                 }`}
               >
                 Manage Gallery
+              </button>
+              <button
+                id="slider_tab_btn"
+                onClick={() => setActiveTab('slider')}
+                className={`px-3 py-1 text-[10px] font-mono font-bold uppercase transition-all rounded-md cursor-pointer ${
+                  activeTab === 'slider'
+                    ? "bg-[#b45309] text-white shadow-sm"
+                    : "text-[#5c544a] hover:bg-[#efece6] hover:text-[#2e261f]"
+                }`}
+              >
+                Slider Alignment
+              </button>
+              <button
+                id="schedule_tab_btn"
+                onClick={() => setActiveTab('schedule')}
+                className={`px-3 py-1 text-[10px] font-mono font-bold uppercase transition-all rounded-md cursor-pointer ${
+                  activeTab === 'schedule'
+                    ? "bg-[#b45309] text-white shadow-sm"
+                    : "text-[#5c544a] hover:bg-[#efece6] hover:text-[#2e261f]"
+                }`}
+              >
+                Block Schedule
               </button>
             </div>
           </div>
@@ -2029,6 +2265,413 @@ export default function AdminPortal() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : activeTab === 'slider' ? (
+            <div className="space-y-6">
+              {/* SLIDER ALIGNMENT CALIBRATION VIEW */}
+              <div className="bg-[#faf8f5] border border-[#e6dccf] p-5 relative"
+                style={{ borderRadius: "16px 2px 16px 2px" }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="p-1 px-2.5 bg-[#fff9e6] border border-amber-300 text-amber-900 font-mono text-[9px] font-black rounded uppercase tracking-widest">
+                    ALIGNMENT ENGINE
+                  </span>
+                  <Sparkles className="w-3.5 h-3.5 text-[#b45309]" />
+                </div>
+
+                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Interactive Before/After Calibration</h6>
+                <p className="text-[11px] text-[#5c544a] mb-6 leading-relaxed">
+                  The comparison photographs of the interior detailing work can sometimes be slightly off-center. Use these controls to scale and pan the photographs in real-time, matching up the seat lines and floorboards perfectly.
+                </p>
+
+                {/* Live Calibration Panel */}
+                <div className="max-w-md mx-auto mb-8 bg-white border border-[#e6dccf] p-3 shadow-sm rounded-2xl">
+                  <div className="relative">
+                    <BeforeAfterSlider 
+                      beforeUrl={sliderBeforeUrl} 
+                      afterUrl={sliderAfterUrl} 
+                      alignment={alignment}
+                    />
+                  </div>
+                  <div className="text-center mt-2">
+                    <span className="text-[9px] font-mono uppercase tracking-widest text-zinc-500 font-bold">Live Calibration Preview</span>
+                  </div>
+                </div>
+
+                {/* Interactive Sliders Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-dashed border-[#e6dccf] pt-6">
+                  
+                  {/* BEFORE PHOTO PANEL */}
+                  <div className="space-y-4 bg-white p-4 border border-zinc-200 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between border-b border-zinc-100 pb-2 mb-2">
+                      <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-800"></span> Before Image
+                      </span>
+                      <button 
+                        type="button"
+                        onClick={() => setAlignment(prev => ({ ...prev, beforeScale: 1.0, beforeX: 0, beforeY: 0 }))}
+                        className="text-[10px] text-zinc-500 hover:text-zinc-850 underline font-mono cursor-pointer"
+                      >
+                        Reset Before
+                      </button>
+                    </div>
+
+                    {/* Scale Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-zinc-650">
+                        <span>Zoom Scale</span>
+                        <span className="font-bold text-zinc-850">{alignment.beforeScale.toFixed(2)}x</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="1.0"
+                        max="2.0"
+                        step="0.01"
+                        value={alignment.beforeScale}
+                        onChange={(e) => setAlignment(prev => ({ ...prev, beforeScale: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 bg-zinc-100 rounded-lg appearance-none cursor-ew-resize accent-zinc-700"
+                      />
+                      <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
+                        <span>1.0x (Default)</span>
+                        <span>2.0x</span>
+                      </div>
+                    </div>
+
+                    {/* Translate X Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-zinc-650">
+                        <span>Horizontal Shift (X)</span>
+                        <span className="font-bold text-zinc-850">{alignment.beforeX > 0 ? `+${alignment.beforeX}%` : `${alignment.beforeX}%`}</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="-50"
+                        max="50"
+                        step="0.5"
+                        value={alignment.beforeX}
+                        onChange={(e) => setAlignment(prev => ({ ...prev, beforeX: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 bg-zinc-100 rounded-lg appearance-none cursor-ew-resize accent-zinc-700"
+                      />
+                      <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
+                        <span>-50%</span>
+                        <span>0% (Center)</span>
+                        <span>+50%</span>
+                      </div>
+                    </div>
+
+                    {/* Translate Y Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-zinc-650">
+                        <span>Vertical Shift (Y)</span>
+                        <span className="font-bold text-zinc-850">{alignment.beforeY > 0 ? `+${alignment.beforeY}%` : `${alignment.beforeY}%`}</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="-50"
+                        max="50"
+                        step="0.5"
+                        value={alignment.beforeY}
+                        onChange={(e) => setAlignment(prev => ({ ...prev, beforeY: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 bg-zinc-100 rounded-lg appearance-none cursor-ew-resize accent-zinc-700"
+                      />
+                      <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
+                        <span>-50%</span>
+                        <span>0% (Center)</span>
+                        <span>+50%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AFTER PHOTO PANEL */}
+                  <div className="space-y-4 bg-amber-50/15 p-4 border border-amber-200/50 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between border-b border-amber-150 pb-2 mb-2">
+                      <span className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#b45309]"></span> After Image
+                      </span>
+                      <button 
+                        type="button"
+                        onClick={() => setAlignment(prev => ({ ...prev, afterScale: 1.0, afterX: 0, afterY: 0 }))}
+                        className="text-[10px] text-amber-700 hover:text-amber-900 underline font-mono cursor-pointer"
+                      >
+                        Reset After
+                      </button>
+                    </div>
+
+                    {/* Scale Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-amber-850">
+                        <span>Zoom Scale</span>
+                        <span className="font-bold text-amber-955">{alignment.afterScale.toFixed(2)}x</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="1.0"
+                        max="2.0"
+                        step="0.01"
+                        value={alignment.afterScale}
+                        onChange={(e) => setAlignment(prev => ({ ...prev, afterScale: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-ew-resize accent-[#b45309]"
+                      />
+                      <div className="flex justify-between text-[10px] text-amber-650 font-mono">
+                        <span>1.0x (Default)</span>
+                        <span>2.0x</span>
+                      </div>
+                    </div>
+
+                    {/* Translate X Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-amber-850">
+                        <span>Horizontal Shift (X)</span>
+                        <span className="font-bold text-amber-955">{alignment.afterX > 0 ? `+${alignment.afterX}%` : `${alignment.afterX}%`}</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="-50"
+                        max="50"
+                        step="0.5"
+                        value={alignment.afterX}
+                        onChange={(e) => setAlignment(prev => ({ ...prev, afterX: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-ew-resize accent-[#b45309]"
+                      />
+                      <div className="flex justify-between text-[10px] text-amber-650 font-mono">
+                        <span>-50%</span>
+                        <span>0% (Center)</span>
+                        <span>+50%</span>
+                      </div>
+                    </div>
+
+                    {/* Translate Y Slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-amber-850">
+                        <span>Vertical Shift (Y)</span>
+                        <span className="font-bold text-amber-955">{alignment.afterY > 0 ? `+${alignment.afterY}%` : `${alignment.afterY}%`}</span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="-50"
+                        max="50"
+                        step="0.5"
+                        value={alignment.afterY}
+                        onChange={(e) => setAlignment(prev => ({ ...prev, afterY: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-ew-resize accent-[#b45309]"
+                      />
+                      <div className="flex justify-between text-[10px] text-amber-650 font-mono">
+                        <span>-50%</span>
+                        <span>0% (Center)</span>
+                        <span>+50%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Save and Options */}
+                <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-zinc-200 pt-6">
+                  <div className="text-left">
+                    <button 
+                      type="button"
+                      onClick={() => setAlignment({ beforeScale: 1.0, beforeX: 0, beforeY: 0, afterScale: 1.0, afterX: 0, afterY: 0 })}
+                      className="px-4 py-2 border border-[#e6dccf] text-[#5c544a] hover:bg-zinc-50 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                    >
+                      Reset All Sliders
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    {alignmentSuccess && (
+                      <span className="text-xs text-emerald-600 font-medium font-sans flex items-center gap-1">
+                        ✓ {alignmentSuccess}
+                      </span>
+                    )}
+                    {alignmentError && (
+                      <span className="text-xs text-red-650 font-medium font-sans flex items-center gap-1">
+                        ✗ {alignmentError}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSaveAlignment}
+                      disabled={savingAlignment}
+                      className="w-full sm:w-auto px-6 py-2.5 bg-[#b45309] hover:bg-amber-850 disabled:bg-amber-300 text-white text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer flex items-center justify-center gap-2"
+                      style={{ borderRadius: "8px 2px 8px 2px" }}
+                    >
+                      {savingAlignment ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Saving Config...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Save Alignment Config
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          ) : activeTab === 'schedule' ? (
+            <div className="space-y-6">
+              {/* SCHEDULE BLOCKER CARD */}
+              <div className="bg-[#faf8f5] border border-[#e6dccf] p-5 relative"
+                style={{ borderRadius: "16px 2px 16px 2px" }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="p-1 px-2.5 bg-[#fff9e6] border border-amber-300 text-amber-900 font-mono text-[9px] font-black rounded uppercase tracking-widest">
+                    SCHEDULE RESTRICTIONS
+                  </span>
+                </div>
+                
+                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Block Date or Time Slot</h6>
+                <p className="text-[#5c544a] text-[11px] font-sans leading-relaxed mb-4">
+                  Mark specific times or entire days as unavailable. Average users will be prevented from booking these times.
+                </p>
+
+                <form onSubmit={handleCreateBlock} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold uppercase text-[#5c544a] mb-1">
+                        Select Date
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={blockDate}
+                        onChange={(e) => setBlockDate(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-[#e6dccf] text-xs text-[#2e261f] font-sans focus:outline-none focus:border-amber-500 rounded-md"
+                        min={new Date().toISOString().split("T")[0]}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold uppercase text-[#5c544a] mb-1">
+                        Time Slot Option
+                      </label>
+                      <select
+                        value={blockTimeSlot}
+                        onChange={(e) => setBlockTimeSlot(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-[#e6dccf] text-xs text-[#2e261f] font-sans focus:outline-none focus:border-amber-500 rounded-md"
+                      >
+                        <option value="all">All Day (Block Entire Date)</option>
+                        <option value="09:00">09:00 AM (Morning)</option>
+                        <option value="12:00">12:00 PM (Midday)</option>
+                        <option value="14:00">02:00 PM (Afternoon)</option>
+                        <option value="18:00">06:00 PM (Evening)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold uppercase text-[#5c544a] mb-1">
+                        Reason / Note (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Vacation, Personal day"
+                        value={blockReason}
+                        onChange={(e) => setBlockReason(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-[#e6dccf] text-xs text-[#2e261f] font-sans focus:outline-none focus:border-amber-500 rounded-md"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                    <div className="text-[10px] font-mono">
+                      {blockSuccess && <span className="text-emerald-700 font-bold">✓ {blockSuccess}</span>}
+                      {blockError && <span className="text-red-600 font-bold">✗ {blockError}</span>}
+                    </div>
+                    
+                    <button
+                      type="submit"
+                      disabled={creatingBlock}
+                      className="px-5 py-2 bg-[#b45309] hover:bg-amber-800 disabled:bg-amber-300 text-white text-[11px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      style={{ borderRadius: "8px 2px 8px 2px" }}
+                    >
+                      {creatingBlock ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Blocking...
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3.5 h-3.5" />
+                          Apply Block Out
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* CURRENT BLOCKED SLOTS LIST */}
+              <div className="bg-[#faf8f5] border border-[#e6dccf] p-5 relative"
+                style={{ borderRadius: "16px 2px 16px 2px" }}
+              >
+                <div className="flex items-center justify-between mb-4 border-b border-dashed border-[#e6dccf] pb-2">
+                  <h6 className="text-[#2e261f] font-serif font-black text-sm">Active Calendar Blocks</h6>
+                  <span className="text-[9px] font-mono text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full font-bold">
+                    {blockedSlots.length} Blocks Registered
+                  </span>
+                </div>
+
+                {loadingBlockedSlots ? (
+                  <div className="text-center py-8 text-zinc-500 text-xs font-serif italic">Loading calendar restrictions...</div>
+                ) : blockedSlots.length === 0 ? (
+                  <div className="text-center py-8 text-zinc-500 text-xs border border-dashed border-[#e6dccf] bg-white rounded-lg p-4">
+                    No active schedule blocks defined. The calendar is fully open!
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto animate-fadeIn">
+                    <table className="w-full text-left text-xs text-[#2e261f]">
+                      <thead>
+                        <tr className="border-b border-[#e6dccf] text-[9px] font-mono uppercase tracking-wider text-[#5c544a]">
+                          <th className="py-2 font-bold">Blocked Date</th>
+                          <th className="py-2 font-bold">Time Slot</th>
+                          <th className="py-2 font-bold">Reason</th>
+                          <th className="py-2 font-bold text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#e6dccf]/40">
+                        {blockedSlots.map((block) => (
+                          <tr key={block.id || `${block.date}_${block.timeSlot}`} className="hover:bg-[#efece6]/30 transition-colors">
+                            <td className="py-2.5 font-bold font-mono">
+                              {new Date(block.date + "T00:00:00").toLocaleDateString(undefined, {
+                                weekday: 'short',
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </td>
+                            <td className="py-2.5">
+                              {block.timeSlot === "all" ? (
+                                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 text-[9px] font-mono font-bold rounded uppercase">
+                                  All Day Block
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/40 text-[9px] font-mono font-bold rounded">
+                                  🕒 {block.timeSlot === "12:00" ? "12:00 PM" : block.timeSlot === "09:00" ? "09:00 AM" : block.timeSlot === "14:00" ? "02:00 PM" : "06:00 PM"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 text-[#5c544a] italic max-w-[200px] truncate">
+                              {block.reason || "Unavailable"}
+                            </td>
+                            <td className="py-2.5 text-right">
+                              <button
+                                onClick={() => handleDeleteBlock(block)}
+                                className="p-1.5 hover:bg-red-50 text-[#5c544a] hover:text-red-600 transition-colors rounded cursor-pointer"
+                                title="Unblock Time Slot"
+                              >
+                                <Unlock className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

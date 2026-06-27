@@ -219,13 +219,15 @@ export default function WorkGallery({
 
   // Merge Firestore-registered photos and raw Storage files
   const dynamicPhotoItems: PhotoItem[] = React.useMemo(() => {
-    const list: PhotoItem[] = dynamicPhotos.map(doc => ({
-      id: doc.id,
-      url: doc.url,
-      name: doc.name || "Custom Detail Photo",
-      caption: doc.caption || "Dynamic driveway work",
-      isDynamic: true
-    }));
+    const list: PhotoItem[] = dynamicPhotos
+      .filter(doc => doc.id !== "slider_alignment")
+      .map(doc => ({
+        id: doc.id,
+        url: doc.url,
+        name: doc.name || "Custom Detail Photo",
+        caption: doc.caption || "Dynamic driveway work",
+        isDynamic: true
+      }));
 
     storagePhotos.forEach((sFile) => {
       const formattedName = formatStorageName(sFile.name);

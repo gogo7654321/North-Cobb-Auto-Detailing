@@ -19,6 +19,13 @@ service cloud.firestore {
                          (request.resource.data.get('service', '') == 'Exterior Detail' && request.resource.data.get('price', 0) == 45) ||
                          (request.resource.data.get('service', '') == 'Interior Detail' && request.resource.data.get('price', 0) == 65) ||
                          (request.resource.data.get('service', '') == 'Full Detail' && request.resource.data.get('price', 0) == 100)
+                       ) &&
+                       (
+                         request.resource.data.dateTime.size() < 16 ||
+                         (
+                           !exists(/databases/$(database)/documents/blocked_slots/$(request.resource.data.dateTime.substring(0, 10) + "_" + request.resource.data.dateTime.substring(11, 16))) &&
+                           !exists(/databases/$(database)/documents/blocked_slots/$(request.resource.data.dateTime.substring(0, 10) + "_all"))
+                         )
                        );
     }
 
@@ -34,6 +41,12 @@ service cloud.firestore {
     }
 
     match /authenticated_owners/{ownerId} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+                      (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");
+    }
+
+    match /blocked_slots/{slotId} {
       allow read: if true;
       allow write: if request.auth != null && 
                       (request.auth.token.email == "npatel012010@gmail.com" || request.auth.token.email == "northcobbdetailing@gmail.com");

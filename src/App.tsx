@@ -18,7 +18,8 @@ import {
   CheckCircle2
 } from "lucide-react";
 import { ref, listAll, getDownloadURL } from "firebase/storage";
-import { storage } from "./lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { db, storage } from "./lib/firebase";
 import WorkGallery from "./components/WorkGallery";
 import ServicesDetail from "./components/ServicesDetail";
 import BookingForm from "./components/BookingForm";
@@ -32,6 +33,14 @@ export default function App() {
   const [heroImgUrl, setHeroImgUrl] = useState<string>("/IMG_0659.jpeg");
   const [sliderBeforeUrl, setSliderBeforeUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1154.JPEG?alt=media");
   const [sliderAfterUrl, setSliderAfterUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1155.JPEG?alt=media");
+  const [sliderAlignment, setSliderAlignment] = useState({
+    beforeScale: 1.0,
+    beforeX: 0,
+    beforeY: 0,
+    afterScale: 1.15,
+    afterX: 0,
+    afterY: -5
+  });
 
   // Fetch true hero & slider comparison images from storage
   useEffect(() => {
@@ -92,6 +101,25 @@ export default function App() {
           } catch (e) {
             console.warn("Could not fetch 1155 from root:", e);
           }
+        }
+
+        // 4. Fetch Slider Alignment Config from Firestore
+        try {
+          const alignmentDoc = await getDoc(doc(db, "gallery_images", "slider_alignment"));
+          if (alignmentDoc.exists()) {
+            const data = alignmentDoc.data();
+            setSliderAlignment({
+              beforeScale: typeof data.beforeScale === 'number' ? data.beforeScale : 1.0,
+              beforeX: typeof data.beforeX === 'number' ? data.beforeX : 0,
+              beforeY: typeof data.beforeY === 'number' ? data.beforeY : 0,
+              afterScale: typeof data.afterScale === 'number' ? data.afterScale : 1.15,
+              afterX: typeof data.afterX === 'number' ? data.afterX : 0,
+              afterY: typeof data.afterY === 'number' ? data.afterY : -5,
+            });
+            console.log("Loaded custom image slider alignment:", data);
+          }
+        } catch (e) {
+          console.warn("Could not fetch slider alignment config:", e);
         }
 
       } catch (err) {
@@ -378,6 +406,7 @@ export default function App() {
                   <BeforeAfterSlider 
                     beforeUrl={sliderBeforeUrl} 
                     afterUrl={sliderAfterUrl} 
+                    alignment={sliderAlignment}
                   />
                   
                   <div className="p-4 text-center mt-1">

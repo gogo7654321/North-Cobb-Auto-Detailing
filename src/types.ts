@@ -24,3 +24,13 @@ export interface DetailingService {
   description: string;
   features: string[];
 }
+
+export interface BlockedSlot {
+  id?: string;
+  date: string; // YYYY-MM-DD
+  timeSlot: string; // "09:00", "14:00", "18:00", "12:00", or "all"
+  reason?: string;
+  createdAt: string; // ISO String
+  createdBy: string; // email of the owner
+}
+

@@ -41,6 +41,19 @@
         "storagePath": { "type": "string", "description": "Optional storage path if deleted from Storage" }
       },
       "required": ["url", "name", "createdAt"]
+    },
+    "BlockedSlot": {
+      "title": "BlockedSlot",
+      "description": "A time slot or an entire day blocked by the owner to prevent user bookings.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date to block (YYYY-MM-DD)" },
+        "timeSlot": { "type": "string", "description": "Time slot to block (09:00, 14:00, 18:00, 12:00, or all)" },
+        "reason": { "type": "string", "description": "Optional reason for blocking" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Block creation timestamp" },
+        "createdBy": { "type": "string", "description": "Owner email address" }
+      },
+      "required": ["date", "timeSlot", "createdAt", "createdBy"]
     }
   },
   "firestore": {
@@ -59,6 +72,10 @@
     "authenticated_owners/{email}": {
       "schema": "AdminConfig",
       "description": "Records of logged-in authorized owner addresses and cache sessions."
+    },
+    "blocked_slots/{slotId}": {
+      "schema": "BlockedSlot",
+      "description": "Owner designated blocked-out dates and time slots."
     }
   }
 }

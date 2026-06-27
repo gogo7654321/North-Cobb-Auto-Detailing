@@ -750,6 +750,37 @@ app.get("/api/busy-slots", async (req, res) => {
         });
       }
     });
+
+    // Merge blocked slots from the owner portal
+    try {
+      const blockedSnapshot = await firestoreDb.collection("blocked_slots").get();
+      blockedSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.date && data.timeSlot) {
+          if (data.timeSlot === "all") {
+            const standardSlots = ["09:00", "14:00", "18:00", "12:00"];
+            standardSlots.forEach((slot) => {
+              slots.push({
+                id: `${docSnap.id}_${slot}`,
+                dateTime: `${data.date}T${slot}:00`,
+                status: "confirmed",
+                isBlocked: true
+              });
+            });
+          } else {
+            slots.push({
+              id: docSnap.id,
+              dateTime: `${data.date}T${data.timeSlot}:00`,
+              status: "confirmed",
+              isBlocked: true
+            });
+          }
+        }
+      });
+    } catch (blockedErr) {
+      console.warn("[Server DB Proxy] Failed to fetch blocked slots for busy slots calculation:", blockedErr);
+    }
+
     return res.json(slots);
   } catch (err: any) {
     console.error("[Server DB Proxy] Get busy slots Firestore failed:", err);
@@ -765,6 +796,23 @@ app.post("/api/bookings", async (req, res) => {
   }
 
   try {
+    if (data.dateTime) {
+      const [bDate, bTime] = data.dateTime.split("T");
+      const bHourMin = bTime ? bTime.substring(0, 5) : "";
+      
+      const docIdSpecific = `${bDate}_${bHourMin}`;
+      const docIdAll = `${bDate}_all`;
+      
+      const [specificSnap, allSnap] = await Promise.all([
+        firestoreDb.collection("blocked_slots").doc(docIdSpecific).get(),
+        firestoreDb.collection("blocked_slots").doc(docIdAll).get()
+      ]);
+      
+      if (specificSnap.exists || allSnap.exists) {
+        return res.status(400).json({ error: "The selected date or time slot has been blocked out by the owner. Please select another slot." });
+      }
+    }
+
     if (id) {
       await firestoreDb.collection("bookings").doc(id).set(data);
       return res.json({ success: true, id });
@@ -812,6 +860,70 @@ app.delete("/api/bookings/:id", async (req, res) => {
   } catch (err: any) {
     console.error("[Server DB Proxy] Delete Booking Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to delete booking." });
+  }
+});
+
+// 9. Blocked Slots: Read
+app.get("/api/blocked-slots", async (req, res) => {
+  try {
+    const snapshot = await firestoreDb.collection("blocked_slots")
+      .orderBy("date", "asc")
+      .get();
+    
+    const items: any[] = [];
+    snapshot.forEach((docSnap) => {
+      items.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return res.json(items);
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Get Blocked Slots Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to retrieve blocked slots." });
+  }
+});
+
+// 10. Blocked Slots: Write
+app.post("/api/blocked-slots", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const { date, timeSlot, reason } = req.body;
+  if (!date || !timeSlot) {
+    return res.status(400).json({ error: "Missing required fields (date, timeSlot)." });
+  }
+
+  // Generate standard document ID so we can query it easily from security rules: YYYY-MM-DD_timeSlot (e.g., 2026-06-28_all)
+  const docId = `${date}_${timeSlot}`;
+  const blockData = {
+    date,
+    timeSlot,
+    reason: reason || "Unavailable",
+    createdAt: new Date().toISOString(),
+    createdBy: req.headers["x-owner-email"] || "northcobbdetailing@gmail.com"
+  };
+
+  try {
+    await firestoreDb.collection("blocked_slots").doc(docId).set(blockData);
+    return res.json({ success: true, id: docId });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Add Blocked Slot Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to add blocked slot." });
+  }
+});
+
+// 11. Blocked Slots: Delete
+app.delete("/api/blocked-slots/:id", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const { id } = req.params;
+  try {
+    await firestoreDb.collection("blocked_slots").doc(id).delete();
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Delete Blocked Slot Firestore failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete blocked slot." });
   }
 });
 

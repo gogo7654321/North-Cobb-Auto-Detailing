@@ -1,23 +1,45 @@
 import React, { useState } from "react";
 
+interface SliderAlignment {
+  beforeScale: number;
+  beforeX: number;
+  beforeY: number;
+  afterScale: number;
+  afterX: number;
+  afterY: number;
+}
+
 interface BeforeAfterSliderProps {
   beforeUrl: string;
   afterUrl: string;
   aspectRatio?: string; // Tailwind aspect class (e.g., 'aspect-[4/3]')
   maxHeight?: string; // (e.g. 'max-h-[380px]')
+  alignment?: SliderAlignment;
 }
 
 export default function BeforeAfterSlider({
   beforeUrl,
   afterUrl,
   aspectRatio = "aspect-[4/3]",
-  maxHeight = "max-h-[380px]"
+  maxHeight = "max-h-[380px]",
+  alignment
 }: BeforeAfterSliderProps) {
   const [sliderPos, setSliderPos] = useState<number>(50);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSliderPos(Number(e.target.value));
   };
+
+  const defaultAlignment: SliderAlignment = {
+    beforeScale: 1.0,
+    beforeX: 0,
+    beforeY: 0,
+    afterScale: 1.15,
+    afterX: 0,
+    afterY: -5
+  };
+
+  const align = alignment || defaultAlignment;
 
   return (
     <div 
@@ -28,7 +50,10 @@ export default function BeforeAfterSlider({
       <img
         src={beforeUrl}
         alt="Before detailing work"
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover origin-center"
+        style={{
+          transform: `scale(${align.beforeScale}) translate(${align.beforeX}%, ${align.beforeY}%)`
+        }}
         referrerPolicy="no-referrer"
       />
 
@@ -50,7 +75,10 @@ export default function BeforeAfterSlider({
         <img
           src={afterUrl}
           alt="After detailing work"
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover origin-center"
+          style={{
+            transform: `scale(${align.afterScale}) translate(${align.afterX}%, ${align.afterY}%)`
+          }}
           referrerPolicy="no-referrer"
         />
       </div>

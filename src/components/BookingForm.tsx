@@ -82,12 +82,31 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
 
   const isSlotBooked = (slotValue: string) => {
     if (!date) return false;
-    if (slotValue === "12:00") return false; // General queue option is never blocked
-    return existingBookings.some((b) => {
+    
+    // Check if there is an explicit reservation or owner block
+    const match = existingBookings.find((b) => {
       if (!b.dateTime) return false;
       const [bDate, bTime] = b.dateTime.split("T");
       const bHourMin = bTime ? bTime.substring(0, 5) : "";
       return bDate === date && bHourMin === slotValue;
+    });
+
+    if (match) {
+      return true;
+    }
+
+    if (slotValue === "12:00") return false; // General queue option is never reserved under normal circumstances
+
+    return false;
+  };
+
+  const isSlotBlockedByOwner = (slotValue: string) => {
+    if (!date) return false;
+    return existingBookings.some((b) => {
+      if (!b.dateTime) return false;
+      const [bDate, bTime] = b.dateTime.split("T");
+      const bHourMin = bTime ? bTime.substring(0, 5) : "";
+      return bDate === date && bHourMin === slotValue && (b as any).isBlocked === true;
     });
   };
 
@@ -669,6 +688,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
               <div className="grid grid-cols-2 gap-2.5">
                 {TIME_SLOTS.map((slot) => {
                   const booked = isSlotBooked(slot.value);
+                  const blocked = isSlotBlockedByOwner(slot.value);
                   const selected = time === slot.value;
                   return (
                     <button
@@ -686,8 +706,8 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     >
                       <span className="text-xs font-semibold">{slot.label}</span>
                       {booked && (
-                        <span className="absolute -top-1.5 -right-1.5 bg-zinc-400 text-white font-extrabold text-[8px] py-0.5 px-1.5 rounded-full uppercase tracking-wider scale-90">
-                          Reserved
+                        <span className={`absolute -top-1.5 -right-1.5 ${blocked ? 'bg-rose-600' : 'bg-zinc-400'} text-white font-extrabold text-[8px] py-0.5 px-1.5 rounded-full uppercase tracking-wider scale-90`}>
+                          {blocked ? "Unavailable" : "Reserved"}
                         </span>
                       )}
                     </button>
