@@ -735,6 +735,27 @@ app.get("/api/bookings", async (req, res) => {
   }
 });
 
+// Helper functions to enforce weekday 8am-3:30pm blocking rule
+function isWeekdayDateString(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return false;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const d = new Date(year, month, day);
+  const dayOfWeek = d.getDay();
+  return dayOfWeek >= 1 && dayOfWeek <= 5; // Monday - Friday
+}
+
+function isTimeInWeekdayBlockedWindow(timeStr: string): boolean {
+  if (!timeStr || timeStr === "12:00") return false; // 12:00 is placeholder for Other/Custom option
+  const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
+  if (isNaN(h)) return false;
+  const mins = h * 60 + (isNaN(m) ? 0 : m);
+  return mins >= 480 && mins <= 930; // 8:00 AM (480 mins) to 3:30 PM (930 mins) inclusive
+}
+
 // Bookings: Public Busy-slots (Only returns safe time & status indicators for busy slots)
 app.get("/api/busy-slots", async (req, res) => {
   try {
@@ -800,6 +821,13 @@ app.post("/api/bookings", async (req, res) => {
       const [bDate, bTime] = data.dateTime.split("T");
       const bHourMin = bTime ? bTime.substring(0, 5) : "";
       
+      // Enforce Weekday 8:00 AM - 3:30 PM rule
+      if (isWeekdayDateString(bDate) && isTimeInWeekdayBlockedWindow(bHourMin)) {
+        return res.status(400).json({ 
+          error: "All weekday time slots between 8:00 AM and 3:30 PM are blocked by the owner. Please select an available slot (e.g. Evening 6:00 PM or weekend dates)." 
+        });
+      }
+
       const docIdSpecific = `${bDate}_${bHourMin}`;
       const docIdAll = `${bDate}_all`;
       

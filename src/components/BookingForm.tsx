@@ -40,6 +40,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   const [vehicleType, setVehicleType] = useState<string>("Sedan / Coupe");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("09:00");
+  const [customTime, setCustomTime] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -80,9 +81,34 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
     return () => clearInterval(interval);
   }, []);
 
+  const isWeekdayDateStr = (dateStr: string): boolean => {
+    if (!dateStr) return false;
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return false;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    const dayOfWeek = d.getDay();
+    return dayOfWeek >= 1 && dayOfWeek <= 5; // Mon-Fri
+  };
+
+  const isTimeInBlockedRange = (timeStr: string): boolean => {
+    if (!timeStr || timeStr === "12:00") return false; // 12:00 is placeholder for Other/Custom option
+    const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
+    if (isNaN(h)) return false;
+    const mins = h * 60 + (isNaN(m) ? 0 : m);
+    return mins >= 480 && mins <= 930; // 8:00 AM (480 mins) to 3:30 PM (930 mins) inclusive
+  };
+
   const isSlotBooked = (slotValue: string) => {
     if (!date) return false;
     
+    // Weekday 8am-3:30pm rule
+    if (isWeekdayDateStr(date) && isTimeInBlockedRange(slotValue)) {
+      return true;
+    }
+
     // Check if there is an explicit reservation or owner block
     const match = existingBookings.find((b) => {
       if (!b.dateTime) return false;
@@ -102,6 +128,12 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
 
   const isSlotBlockedByOwner = (slotValue: string) => {
     if (!date) return false;
+
+    // Weekday 8am-3:30pm rule
+    if (isWeekdayDateStr(date) && isTimeInBlockedRange(slotValue)) {
+      return true;
+    }
+
     return existingBookings.some((b) => {
       if (!b.dateTime) return false;
       const [bDate, bTime] = b.dateTime.split("T");
@@ -114,7 +146,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   useEffect(() => {
     if (!date) return;
     if (isSlotBooked(time)) {
-      const firstAvailable = ["09:00", "14:00", "18:00"].find(t => !isSlotBooked(t)) || "12:00";
+      const firstAvailable = ["09:00", "14:00", "18:00", "12:00"].find(t => !isSlotBooked(t)) || "18:00";
       setTime(firstAvailable);
     }
   }, [date, existingBookings]);
@@ -213,6 +245,15 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       return;
     }
 
+    // Custom time weekday check
+    if (time === "12:00" && customTime && date && isWeekdayDateStr(date)) {
+      if (isTimeInBlockedRange(customTime)) {
+        setErrorMsg("Requested custom time on weekdays cannot be scheduled between 8:00 AM and 3:30 PM. Please select a custom time before 8:00 AM or after 3:30 PM.");
+        setLoading(false);
+        return;
+      }
+    }
+
     // Double-booking check
     if (isSlotBooked(time)) {
       setErrorMsg("The selected time slot is already reserved. Please select another slot.");
@@ -221,9 +262,14 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
     }
 
     // Prepare ISO dateTime string
-    const bookingDateTime = `${date}T${time}:00`;
+    const finalSlotTime = (time === "12:00" && customTime) ? customTime : time;
+    const bookingDateTime = `${date}T${finalSlotTime}:00`;
     const finalPrice = getPrice(service);
     const bookingId = "book_" + Math.random().toString(36).substring(2, 10);
+
+    const fullNotes = customTime && time === "12:00" 
+      ? `[Requested Custom Time: ${customTime}] ${notes.trim()}`.trim() 
+      : notes.trim();
 
     const bookingPayload: Booking = {
       name: name.trim(),
@@ -234,7 +280,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       dateTime: bookingDateTime,
       status: "pending",
       createdAt: new Date().toISOString(),
-      notes: notes.trim(),
+      notes: fullNotes,
       vehicleType: vehicleType
     };
 
@@ -676,6 +722,13 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {date && isWeekdayDateStr(date) && (
+                <div className="mt-2 text-[11px] bg-amber-50/90 text-amber-900 border border-amber-200 p-2.5 rounded-xl font-sans leading-snug flex items-start gap-2 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
+                  <span><strong>Weekday Hours:</strong> Times from 8:00 AM to 3:30 PM are blocked out on weekdays. Evening (6:00 PM) is available!</span>
+                </div>
+              )}
             </div>
 
             {/* Time Slot Picker Grid */}
@@ -716,9 +769,42 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
               </div>
 
               {time === "12:00" && (
-                <div className="mt-3 text-xs bg-amber-50 text-amber-800 p-3 rounded-xl border border-amber-200/50 flex items-start gap-2 font-medium">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-650 mt-0.5 animate-pulse" />
-                  <span>You will receive a text from Arthur & Carson to book a proper custom time for your detail!</span>
+                <div className="mt-3 p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl space-y-2.5 animate-fadeIn">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                    <Clock className="w-3.5 h-3.5 text-[#b45309]" />
+                    <span>Specify Preferred Custom Time</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold uppercase text-zinc-600 mb-1">
+                        Select Custom Time
+                      </label>
+                      <input
+                        type="time"
+                        value={customTime}
+                        onChange={(e) => setCustomTime(e.target.value)}
+                        className="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs font-sans text-zinc-800 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                      />
+                    </div>
+
+                    <div className="text-[10.5px] text-amber-900 flex items-center italic font-sans leading-tight">
+                      Arthur & Carson will text you to confirm your custom slot details!
+                    </div>
+                  </div>
+
+                  {date && isWeekdayDateStr(date) && (
+                    <p className="text-[10px] font-sans font-medium text-amber-800 bg-white/70 p-2 rounded-lg border border-amber-200/60">
+                      ℹ️ <strong>Weekday Custom Hours:</strong> On weekdays, custom slots can be scheduled before 8:00 AM (e.g. 7:00 AM) or after 3:30 PM (e.g. 4:00 PM, 5:00 PM, 7:00 PM).
+                    </p>
+                  )}
+
+                  {date && isWeekdayDateStr(date) && customTime && isTimeInBlockedRange(customTime) && (
+                    <div className="text-[10.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 p-2 rounded-lg flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>Custom time falls in the blocked window (8:00 AM – 3:30 PM). Please select a time before 8:00 AM or after 3:30 PM.</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

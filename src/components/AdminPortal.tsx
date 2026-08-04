@@ -2520,15 +2520,19 @@ export default function AdminPortal() {
               <div className="bg-[#faf8f5] border border-[#e6dccf] p-5 relative"
                 style={{ borderRadius: "16px 2px 16px 2px" }}
               >
-                <div className="flex items-center gap-2 mb-4">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
                   <span className="p-1 px-2.5 bg-[#fff9e6] border border-amber-300 text-amber-900 font-mono text-[9px] font-black rounded uppercase tracking-widest">
                     SCHEDULE RESTRICTIONS
                   </span>
+                  <span className="p-1 px-2.5 bg-rose-50 border border-rose-200 text-rose-800 font-mono text-[9px] font-bold rounded uppercase tracking-wider flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-rose-600" />
+                    Rule Active: Weekdays 8:00 AM – 3:30 PM Blocked
+                  </span>
                 </div>
                 
-                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Block Date or Time Slot</h6>
+                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Block Specific Dates or Additional Slots</h6>
                 <p className="text-[#5c544a] text-[11px] font-sans leading-relaxed mb-4">
-                  Mark specific times or entire days as unavailable. Average users will be prevented from booking these times.
+                  All weekdays (Monday–Friday) from 8:00 AM to 3:30 PM are automatically blocked out. You can also block out custom dates or additional weekend/evening slots below.
                 </p>
 
                 <form onSubmit={handleCreateBlock} className="space-y-4">
