@@ -20,7 +20,7 @@ const SERVICE_TIERS: DetailingService[] = [
   },
   {
     name: "Interior Detail",
-    price: 65,
+    price: 70,
     duration: "1.5 hours",
     description: "Complete interior cleaning including custom vacuuming seats, carpets, and trunk. All surfaces wiped down and detailed (dash, doors, center console). Crevices thoroughly cleared. Weather mat restoration included. All interior glass cleaned for a streak-free finish. Includes a complimentary premium air freshener.",
     features: [
@@ -181,6 +181,65 @@ export default function ServicesDetail({ onSelectService }: ServicesDetailProps)
             </div>
           );
         })}
+      </div>
+
+      {/* Vehicle Sizing Surcharges & Student Crew Notice */}
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Vehicle Sizing Pricing Breakdown */}
+        <div className="bg-[#faf8f5] border-2 border-[#e6dccf] p-6 rounded-2xl text-left space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 bg-amber-100/70 border border-amber-300/60 rounded-full text-[10px] font-extrabold text-[#b45309] uppercase tracking-wider font-sans">
+              Vehicle Sizing Upgrades
+            </span>
+            <span className="text-[10px] font-mono font-bold text-zinc-500 uppercase">Applied to All Packages</span>
+          </div>
+          <h5 className="text-[#2e261f] font-black text-base font-serif">Fair Pricing for Bigger Rides</h5>
+          <p className="text-xs text-[#5c544a] leading-relaxed font-medium">
+            Base package rates apply to standard Sedans & Coupes. Larger vehicle sizes require additional cleaning time & products:
+          </p>
+          <div className="space-y-2 pt-1 font-sans text-xs">
+            <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-[#e6dccf]">
+              <span className="font-semibold text-zinc-800">Sedan / Coupe / Hatchback</span>
+              <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">Base Price (+$0)</span>
+            </div>
+            <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-[#e6dccf]">
+              <span className="font-semibold text-zinc-800">Mid-size / Crossover / SUV</span>
+              <span className="font-extrabold text-[#b45309] bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">+$15 Surcharge</span>
+            </div>
+            <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-[#e6dccf]">
+              <span className="font-semibold text-zinc-800">Truck / Large SUV / Minivan</span>
+              <span className="font-extrabold text-[#b45309] bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">+$30 Surcharge</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Student Schedule & Availability Explanation */}
+        <div className="bg-[#faf8f5] border-2 border-[#e6dccf] p-6 rounded-2xl text-left space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 bg-blue-100/70 border border-blue-300/60 rounded-full text-[10px] font-extrabold text-blue-900 uppercase tracking-wider font-sans">
+              🎓 Student-Owned Crew Notice
+            </span>
+            <span className="text-[10px] font-mono font-bold text-blue-800 uppercase">Availability Info</span>
+          </div>
+          <h5 className="text-[#2e261f] font-black text-base font-serif">Why Weekday Daytimes Are Blocked</h5>
+          <p className="text-xs text-[#5c544a] leading-relaxed font-medium">
+            Arthur & Carson are local students currently attending school during weekday daytime hours (8:00 AM – 3:30 PM). 
+          </p>
+          <div className="bg-white p-3 rounded-xl border border-[#e6dccf] space-y-2 text-xs font-sans">
+            <div className="flex items-start gap-2">
+              <span className="text-[#b45309] font-bold">🏫</span>
+              <span><strong>Mon – Fri (8:00 AM – 3:30 PM):</strong> Blocked for school hours</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-emerald-600 font-bold">🌅</span>
+              <span><strong>Weekday Evenings (After 3:30 PM & 6:00 PM):</strong> Open for driveway detailing!</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-emerald-600 font-bold">☀️</span>
+              <span><strong>Weekends (Sat & Sun):</strong> Full open availability all day</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Driveway Utility Requirements Section */}

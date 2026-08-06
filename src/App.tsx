@@ -417,6 +417,27 @@ export default function App() {
               </div>
             </section>
 
+            {/* STUDENT CREW & HOURS ANNOUNCEMENT CARD */}
+            <section className="bg-gradient-to-r from-amber-500/10 via-amber-100/50 to-amber-500/10 border-2 border-amber-300/80 p-5 sm:p-6 rounded-2xl flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-left shadow-sm">
+              <div className="space-y-1 max-w-2xl">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🎓</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-900 font-sans">
+                    Student-Owned Business & Current Schedule
+                  </span>
+                </div>
+                <p className="text-xs text-amber-950 font-medium leading-relaxed font-sans">
+                  Arthur & Carson are local students currently attending school on weekdays. Weekday daytime hours (8:00 AM – 3:30 PM) are blocked for school, but <strong>weekday evenings (after 3:30 PM & 6:00 PM)</strong> and <strong>weekends (all day)</strong> are fully open for driveway detailing!
+                </p>
+              </div>
+              <button
+                onClick={() => { setSelectedTab("book"); window.location.hash = "#book"; }}
+                className="shrink-0 px-4 py-2.5 bg-[#b45309] hover:bg-[#9a3412] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Book Available Slot
+              </button>
+            </section>
+
             {/* ARTISAN PLEDGE & CLEAN SERVICE STANDARDS */}
             <section className="bg-[#faf8f5] border-2 border-[#e6dccf] p-6 sm:p-8 rounded-2xl flex flex-col md:flex-row gap-6 items-center">
               <div className="flex items-center gap-4 shrink-0">

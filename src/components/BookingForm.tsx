@@ -175,18 +175,20 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   const getPrice = (type: BookingServiceType) => {
     switch (type) {
       case "Exterior Detail": return 45;
-      case "Interior Detail": return 65;
+      case "Interior Detail": return 70;
       case "Full Detail": return 100;
       default: return 45;
     }
   };
 
   const getVehicleAdjustmentPrice = (vType: string) => {
-    switch (vType) {
-      case "Crossover / Small SUV": return 15;
-      case "Large SUV / Truck / Minivan": return 30;
-      default: return 0;
+    if (vType.includes("Truck") || vType.includes("Large SUV") || vType.includes("Minivan")) {
+      return 30;
     }
+    if (vType.includes("Mid-size") || vType.includes("Crossover") || vType.includes("SUV")) {
+      return 15;
+    }
+    return 0; // Sedan / Coupe
   };
 
   // Error logging in conformity with the Firebase Integration Skill (Pillar 3 Error Handling)
@@ -671,9 +673,9 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     onChange={(e) => setVehicleType(e.target.value)}
                     className="w-full block max-w-full bg-[#fdfbf8] border-2 border-[#e6dccf] rounded-xl px-4 py-3 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 transition-all duration-200 appearance-none cursor-pointer"
                   >
-                    <option value="Sedan / Coupe">Sedan / Coupe</option>
-                    <option value="Crossover / Small SUV">Crossover / Small SUV</option>
-                    <option value="Large SUV / Truck / Minivan">Large SUV / Truck / Minivan</option>
+                    <option value="Sedan / Coupe">Sedan / Coupe (Standard)</option>
+                    <option value="Mid-size / Crossover / SUV">Mid-size / Crossover / SUV (+$15)</option>
+                    <option value="Truck / Large SUV / Minivan">Truck / Large SUV / Minivan (+$30)</option>
                   </select>
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px] font-sans font-bold select-none uppercase tracking-wider">
                     SIZE
@@ -726,7 +728,7 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
               {date && isWeekdayDateStr(date) && (
                 <div className="mt-2 text-[11px] bg-amber-50/90 text-amber-900 border border-amber-200 p-2.5 rounded-xl font-sans leading-snug flex items-start gap-2 animate-fadeIn">
                   <AlertCircle className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
-                  <span><strong>Weekday Hours:</strong> Times from 8:00 AM to 3:30 PM are blocked out on weekdays. Evening (6:00 PM) is available!</span>
+                  <span><strong>🎓 Student Schedule Note:</strong> Arthur & Carson are students in school during weekday daytime hours, so 8:00 AM – 3:30 PM is blocked off. Evening slots (6:00 PM) & custom evening times after 3:30 PM (or weekends) are fully available!</span>
                 </div>
               )}
             </div>
