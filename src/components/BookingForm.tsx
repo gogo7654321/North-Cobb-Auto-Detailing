@@ -61,6 +61,15 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   ];
 
   const [existingBookings, setExistingBookings] = useState<Booking[]>([]);
+  const [weeklyScheduleConfig, setWeeklyScheduleConfig] = useState<any>({
+    monday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    tuesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    wednesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    thursday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    friday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    saturday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+    sunday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" }
+  });
 
   // Poll public active slots via API proxy to prevent permission blocks and secure private data
   useEffect(() => {
@@ -68,8 +77,13 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       try {
         const res = await fetch("/api/busy-slots");
         if (res.ok) {
-          const list = await res.json();
-          setExistingBookings(list);
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setExistingBookings(data);
+          } else if (data && typeof data === "object") {
+            if (Array.isArray(data.slots)) setExistingBookings(data.slots);
+            if (data.weeklySchedule) setWeeklyScheduleConfig(data.weeklySchedule);
+          }
         }
       } catch (err) {
         console.warn("Could not retrieve real-time schedule: ", err);
@@ -81,31 +95,46 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
     return () => clearInterval(interval);
   }, []);
 
-  const isWeekdayDateStr = (dateStr: string): boolean => {
-    if (!dateStr) return false;
+  const getDayNameFromDateStr = (dateStr: string): string => {
+    if (!dateStr) return "";
     const parts = dateStr.split("-");
-    if (parts.length !== 3) return false;
+    if (parts.length !== 3) return "";
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
     const day = parseInt(parts[2], 10);
     const d = new Date(year, month, day);
-    const dayOfWeek = d.getDay();
-    return dayOfWeek >= 1 && dayOfWeek <= 5; // Mon-Fri
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    return days[d.getDay()] || "";
   };
 
-  const isTimeInBlockedRange = (timeStr: string): boolean => {
-    if (!timeStr || timeStr === "12:00") return false; // 12:00 is placeholder for Other/Custom option
-    const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
-    if (isNaN(h)) return false;
-    const mins = h * 60 + (isNaN(m) ? 0 : m);
-    return mins >= 480 && mins <= 930; // 8:00 AM (480 mins) to 3:30 PM (930 mins) inclusive
+  const isSlotBlockedByWeeklyRule = (dateStr: string, slotValue: string): boolean => {
+    if (!dateStr || !slotValue || slotValue === "12:00" || !weeklyScheduleConfig) return false;
+    const dayName = getDayNameFromDateStr(dateStr);
+    const dayRule = weeklyScheduleConfig[dayName];
+    if (!dayRule) return false;
+
+    if (dayRule.status === "blocked_all_day") return true;
+
+    if (dayRule.status === "blocked_hours" && dayRule.blockedStart && dayRule.blockedEnd) {
+      const [sh, sm] = dayRule.blockedStart.split(":").map((n: string) => parseInt(n, 10));
+      const [eh, em] = dayRule.blockedEnd.split(":").map((n: string) => parseInt(n, 10));
+      const [th, tm] = slotValue.split(":").map((n: string) => parseInt(n, 10));
+
+      const startMins = (sh || 0) * 60 + (sm || 0);
+      const endMins = (eh || 0) * 60 + (em || 0);
+      const targetMins = (th || 0) * 60 + (tm || 0);
+
+      return targetMins >= startMins && targetMins <= endMins;
+    }
+
+    return false;
   };
 
   const isSlotBooked = (slotValue: string) => {
     if (!date) return false;
     
-    // Weekday 8am-3:30pm rule
-    if (isWeekdayDateStr(date) && isTimeInBlockedRange(slotValue)) {
+    // Weekly schedule rule check
+    if (isSlotBlockedByWeeklyRule(date, slotValue)) {
       return true;
     }
 
@@ -129,8 +158,8 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
   const isSlotBlockedByOwner = (slotValue: string) => {
     if (!date) return false;
 
-    // Weekday 8am-3:30pm rule
-    if (isWeekdayDateStr(date) && isTimeInBlockedRange(slotValue)) {
+    // Weekly schedule rule check
+    if (isSlotBlockedByWeeklyRule(date, slotValue)) {
       return true;
     }
 
@@ -247,13 +276,11 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
       return;
     }
 
-    // Custom time weekday check
-    if (time === "12:00" && customTime && date && isWeekdayDateStr(date)) {
-      if (isTimeInBlockedRange(customTime)) {
-        setErrorMsg("Requested custom time on weekdays cannot be scheduled between 8:00 AM and 3:30 PM. Please select a custom time before 8:00 AM or after 3:30 PM.");
-        setLoading(false);
-        return;
-      }
+    // Custom time weekly schedule check
+    if (time === "12:00" && customTime && date && isSlotBlockedByWeeklyRule(date, customTime)) {
+      setErrorMsg("The requested custom time falls within a blocked window on your selected date. Please pick another custom time.");
+      setLoading(false);
+      return;
     }
 
     // Double-booking check
@@ -725,12 +752,38 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                 )}
               </AnimatePresence>
 
-              {date && isWeekdayDateStr(date) && (
-                <div className="mt-2 text-[11px] bg-amber-50/90 text-amber-900 border border-amber-200 p-2.5 rounded-xl font-sans leading-snug flex items-start gap-2 animate-fadeIn">
-                  <AlertCircle className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
-                  <span><strong>🎓 Student Schedule Note:</strong> Arthur & Carson are students in school during weekday daytime hours, so 8:00 AM – 3:30 PM is blocked off. Evening slots (6:00 PM) & custom evening times after 3:30 PM (or weekends) are fully available!</span>
-                </div>
-              )}
+              {date && (() => {
+                const dayName = getDayNameFromDateStr(date);
+                const dayRule = weeklyScheduleConfig ? weeklyScheduleConfig[dayName] : null;
+                if (!dayRule) return null;
+
+                if (dayRule.status === "blocked_all_day") {
+                  return (
+                    <div className="mt-2 text-[11px] bg-rose-50 text-rose-900 border border-rose-200 p-2.5 rounded-xl font-sans leading-snug flex items-start gap-2 animate-fadeIn">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <span><strong>🔒 Day Closed:</strong> {dayRule.note || `The crew is unavailable on ${dayName.toUpperCase()}s.`} Please select another date.</span>
+                    </div>
+                  );
+                }
+
+                if (dayRule.status === "blocked_hours") {
+                  return (
+                    <div className="mt-2 text-[11px] bg-amber-50/90 text-amber-900 border border-amber-200 p-2.5 rounded-xl font-sans leading-snug flex items-start gap-2 animate-fadeIn">
+                      <AlertCircle className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
+                      <span>
+                        <strong>🎓 Schedule Notice ({dayName.toUpperCase()}):</strong> {dayRule.note || "School hours"} ({dayRule.blockedStart || "08:00"} – {dayRule.blockedEnd || "15:30"}) are blocked off. Evening slots & custom times after {dayRule.blockedEnd || "15:30"} are fully available!
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="mt-2 text-[11px] bg-emerald-50 text-emerald-900 border border-emerald-200 p-2.5 rounded-xl font-sans leading-snug flex items-start gap-2 animate-fadeIn">
+                    <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span><strong>☀️ Open Availability:</strong> The crew has full availability on {dayName.toUpperCase()}s! All standard slots are ready for booking.</span>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Time Slot Picker Grid */}
@@ -795,16 +848,10 @@ export default function BookingForm({ initialService, onBookingSuccess }: Bookin
                     </div>
                   </div>
 
-                  {date && isWeekdayDateStr(date) && (
-                    <p className="text-[10px] font-sans font-medium text-amber-800 bg-white/70 p-2 rounded-lg border border-amber-200/60">
-                      ℹ️ <strong>Weekday Custom Hours:</strong> On weekdays, custom slots can be scheduled before 8:00 AM (e.g. 7:00 AM) or after 3:30 PM (e.g. 4:00 PM, 5:00 PM, 7:00 PM).
-                    </p>
-                  )}
-
-                  {date && isWeekdayDateStr(date) && customTime && isTimeInBlockedRange(customTime) && (
+                  {date && customTime && isSlotBlockedByWeeklyRule(date, customTime) && (
                     <div className="text-[10.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 p-2 rounded-lg flex items-center gap-1.5">
                       <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                      <span>Custom time falls in the blocked window (8:00 AM – 3:30 PM). Please select a time before 8:00 AM or after 3:30 PM.</span>
+                      <span>Custom time falls within a blocked window for this date. Please select a time outside the blocked hours.</span>
                     </div>
                   )}
                 </div>

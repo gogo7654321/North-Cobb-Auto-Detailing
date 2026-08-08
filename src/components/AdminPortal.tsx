@@ -74,6 +74,21 @@ export default function AdminPortal() {
   const [blockSuccess, setBlockSuccess] = useState("");
   const [blockError, setBlockError] = useState("");
 
+  // Weekly Schedule Configuration States
+  const [weeklySchedule, setWeeklySchedule] = useState<Record<string, { status: string; blockedStart?: string; blockedEnd?: string; note?: string }>>({
+    monday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    tuesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    wednesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    thursday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    friday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+    saturday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+    sunday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" }
+  });
+  const [loadingWeeklySchedule, setLoadingWeeklySchedule] = useState(false);
+  const [savingWeeklySchedule, setSavingWeeklySchedule] = useState(false);
+  const [weeklyScheduleSuccess, setWeeklyScheduleSuccess] = useState("");
+  const [weeklyScheduleError, setWeeklyScheduleError] = useState("");
+
   // Slider Alignment States
   const [sliderBeforeUrl, setSliderBeforeUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1154.JPEG?alt=media");
   const [sliderAfterUrl, setSliderAfterUrl] = useState<string>("https://firebasestorage.googleapis.com/v0/b/north-cobb-detailing.firebasestorage.app/o/IMG_1155.JPEG?alt=media");
@@ -293,9 +308,62 @@ export default function AdminPortal() {
     }
   };
 
+  const fetchWeeklySchedule = async () => {
+    try {
+      setLoadingWeeklySchedule(true);
+      const response = await fetch("/api/weekly-schedule");
+      if (response.ok) {
+        const data = await response.json();
+        setWeeklySchedule(prev => ({ ...prev, ...data }));
+      }
+    } catch (err) {
+      console.error("Failed to load weekly schedule config: ", err);
+    } finally {
+      setLoadingWeeklySchedule(false);
+    }
+  };
+
+  const handleSaveWeeklySchedule = async () => {
+    setSavingWeeklySchedule(true);
+    setWeeklyScheduleSuccess("");
+    setWeeklyScheduleError("");
+
+    let clientSaveOk = false;
+    try {
+      await setDoc(doc(db, "settings", "weekly_schedule"), weeklySchedule);
+      clientSaveOk = true;
+    } catch (err) {
+      console.warn("Direct Firestore save for weekly schedule failed:", err);
+    }
+
+    try {
+      const response = await fetch("/api/weekly-schedule", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Owner-Email": adminUser?.email || "northcobbdetailing@gmail.com"
+        },
+        body: JSON.stringify(weeklySchedule)
+      });
+
+      if (!response.ok && !clientSaveOk) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to save weekly schedule settings.");
+      }
+
+      setWeeklyScheduleSuccess("Weekly recurring schedule updated & active!");
+      setTimeout(() => setWeeklyScheduleSuccess(""), 4000);
+    } catch (err: any) {
+      setWeeklyScheduleError(err.message || "Failed to save weekly schedule settings.");
+    } finally {
+      setSavingWeeklySchedule(false);
+    }
+  };
+
   useEffect(() => {
     if (isAdminAuth && activeTab === 'schedule') {
       fetchBlockedSlots();
+      fetchWeeklySchedule();
     }
   }, [isAdminAuth, activeTab]);
 
@@ -2515,24 +2583,191 @@ export default function AdminPortal() {
               </div>
             </div>
           ) : activeTab === 'schedule' ? (
-            <div className="space-y-6">
-              {/* SCHEDULE BLOCKER CARD */}
+            <div className="space-y-8">
+
+              {/* RECURRING WEEKLY OPERATING HOURS MANAGER */}
+              <div className="bg-[#faf8f5] border-2 border-[#e6dccf] p-6 relative"
+                style={{ borderRadius: "16px 2px 16px 2px" }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-dashed border-[#e6dccf]">
+                  <div className="space-y-1 text-left">
+                    <span className="p-1 px-2.5 bg-[#fff9e6] border border-amber-300 text-amber-900 font-mono text-[9px] font-black rounded uppercase tracking-widest inline-block">
+                      🗓️ RECURRING WEEKLY SCHEDULE
+                    </span>
+                    <h6 className="text-[#2e261f] font-serif font-black text-base">Weekly Operating Hours & Recurring Window Blocks</h6>
+                    <p className="text-[#5c544a] text-xs font-sans leading-relaxed">
+                      Configure your standard operating schedule for each day of the week. Mark days as open, fully closed, or set custom blocked windows (e.g. school hours).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWeeklySchedule({
+                          monday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+                          tuesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+                          wednesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+                          thursday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+                          friday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+                          saturday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          sunday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" }
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold uppercase rounded transition-colors cursor-pointer"
+                    >
+                      Reset Student Default (Mon-Fri 8-3:30)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWeeklySchedule({
+                          monday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          tuesday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          wednesday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          thursday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          friday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          saturday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+                          sunday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" }
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-mono font-bold uppercase rounded transition-colors cursor-pointer"
+                    >
+                      Open All Days
+                    </button>
+                  </div>
+                </div>
+
+                {loadingWeeklySchedule ? (
+                  <div className="text-center py-6 text-zinc-500 text-xs font-serif italic">Loading weekly schedule settings...</div>
+                ) : (
+                  <div className="space-y-3">
+                    {["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((dayKey) => {
+                      const dayRule = weeklySchedule[dayKey] || { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "" };
+                      const dayLabel = dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
+
+                      return (
+                        <div 
+                          key={dayKey}
+                          className="p-3.5 bg-white border border-[#e6dccf] rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-center gap-3 w-full md:w-52 shrink-0">
+                            <span className="w-24 font-mono font-bold text-zinc-800 uppercase text-xs">{dayLabel}</span>
+                            <select
+                              value={dayRule.status}
+                              onChange={(e) => {
+                                const newStatus = e.target.value;
+                                setWeeklySchedule(prev => ({
+                                  ...prev,
+                                  [dayKey]: {
+                                    ...prev[dayKey],
+                                    status: newStatus,
+                                    blockedStart: newStatus === "blocked_hours" ? (prev[dayKey]?.blockedStart || "08:00") : "",
+                                    blockedEnd: newStatus === "blocked_hours" ? (prev[dayKey]?.blockedEnd || "15:30") : ""
+                                  }
+                                }));
+                              }}
+                              className="w-full p-2 bg-[#fdfbf8] border border-[#e6dccf] rounded font-mono font-bold text-[11px] text-zinc-800 focus:outline-none focus:border-amber-500 cursor-pointer"
+                            >
+                              <option value="open_all_day">🟢 Open All Day</option>
+                              <option value="blocked_hours">🟡 Blocked Window</option>
+                              <option value="blocked_all_day">🔴 Closed All Day</option>
+                            </select>
+                          </div>
+
+                          {dayRule.status === "blocked_hours" && (
+                            <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                              <span className="text-zinc-500">Block From:</span>
+                              <input 
+                                type="time"
+                                value={dayRule.blockedStart || "08:00"}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setWeeklySchedule(prev => ({
+                                    ...prev,
+                                    [dayKey]: { ...prev[dayKey], blockedStart: val }
+                                  }));
+                                }}
+                                className="p-1.5 bg-[#fdfbf8] border border-[#e6dccf] rounded text-zinc-800 font-bold focus:outline-none focus:border-amber-500"
+                              />
+                              <span className="text-zinc-500">To:</span>
+                              <input 
+                                type="time"
+                                value={dayRule.blockedEnd || "15:30"}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setWeeklySchedule(prev => ({
+                                    ...prev,
+                                    [dayKey]: { ...prev[dayKey], blockedEnd: val }
+                                  }));
+                                }}
+                                className="p-1.5 bg-[#fdfbf8] border border-[#e6dccf] rounded text-zinc-800 font-bold focus:outline-none focus:border-amber-500"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex-1">
+                            <input 
+                              type="text"
+                              placeholder="Reason / Note (e.g. School hours)"
+                              value={dayRule.note || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setWeeklySchedule(prev => ({
+                                  ...prev,
+                                  [dayKey]: { ...prev[dayKey], note: val }
+                                }));
+                              }}
+                              className="w-full p-2 bg-[#fdfbf8] border border-[#e6dccf] rounded text-xs text-zinc-800 focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-[#e6dccf]">
+                      <div className="text-xs font-sans">
+                        {weeklyScheduleSuccess && <span className="text-emerald-700 font-bold flex items-center gap-1">✓ {weeklyScheduleSuccess}</span>}
+                        {weeklyScheduleError && <span className="text-red-600 font-bold flex items-center gap-1">✗ {weeklyScheduleError}</span>}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveWeeklySchedule}
+                        disabled={savingWeeklySchedule}
+                        className="w-full sm:w-auto px-6 py-2.5 bg-[#b45309] hover:bg-amber-800 disabled:bg-amber-300 text-white text-xs font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2"
+                        style={{ borderRadius: "8px 2px 8px 2px" }}
+                      >
+                        {savingWeeklySchedule ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            Saving Weekly Rules...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            Save Weekly Operating Hours
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SCHEDULE BLOCKER CARD FOR SPECIFIC DATES */}
               <div className="bg-[#faf8f5] border border-[#e6dccf] p-5 relative"
                 style={{ borderRadius: "16px 2px 16px 2px" }}
               >
                 <div className="flex flex-wrap items-center gap-2 mb-4">
                   <span className="p-1 px-2.5 bg-[#fff9e6] border border-amber-300 text-amber-900 font-mono text-[9px] font-black rounded uppercase tracking-widest">
-                    SCHEDULE RESTRICTIONS
-                  </span>
-                  <span className="p-1 px-2.5 bg-rose-50 border border-rose-200 text-rose-800 font-mono text-[9px] font-bold rounded uppercase tracking-wider flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-rose-600" />
-                    Rule Active: Weekdays 8:00 AM – 3:30 PM Blocked
+                    DATE-SPECIFIC BLOCKER
                   </span>
                 </div>
                 
-                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Block Specific Dates or Additional Slots</h6>
+                <h6 className="text-[#2e261f] font-serif font-black text-sm mb-1">Block Specific Calendar Dates or Individual Time Slots</h6>
                 <p className="text-[#5c544a] text-[11px] font-sans leading-relaxed mb-4">
-                  All weekdays (Monday–Friday) from 8:00 AM to 3:30 PM are automatically blocked out. You can also block out custom dates or additional weekend/evening slots below.
+                  Need to take a specific day off or block out a single time slot? Pick a date and block option below.
                 </p>
 
                 <form onSubmit={handleCreateBlock} className="space-y-4">

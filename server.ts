@@ -735,25 +735,71 @@ app.get("/api/bookings", async (req, res) => {
   }
 });
 
-// Helper functions to enforce weekday 8am-3:30pm blocking rule
-function isWeekdayDateString(dateStr: string): boolean {
-  if (!dateStr) return false;
+// Dynamic Weekly Schedule Settings & Helper functions
+const DEFAULT_WEEKLY_SCHEDULE: Record<string, { status: string; blockedStart?: string; blockedEnd?: string; note?: string }> = {
+  monday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+  tuesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+  wednesday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+  thursday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+  friday: { status: "blocked_hours", blockedStart: "08:00", blockedEnd: "15:30", note: "Student school hours" },
+  saturday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" },
+  sunday: { status: "open_all_day", blockedStart: "", blockedEnd: "", note: "Open all day" }
+};
+
+async function getWeeklyScheduleConfig() {
+  try {
+    const docSnap = await firestoreDb.collection("settings").doc("weekly_schedule").get();
+    if (docSnap.exists) {
+      return { ...DEFAULT_WEEKLY_SCHEDULE, ...docSnap.data() };
+    }
+  } catch (err) {
+    console.warn("[Server DB Proxy] Failed to fetch weekly schedule settings from Firestore, using defaults:", err);
+  }
+  return DEFAULT_WEEKLY_SCHEDULE;
+}
+
+function getDayOfWeekName(dateStr: string): string {
+  if (!dateStr) return "";
   const parts = dateStr.split("-");
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return "";
   const year = parseInt(parts[0], 10);
   const month = parseInt(parts[1], 10) - 1;
   const day = parseInt(parts[2], 10);
   const d = new Date(year, month, day);
-  const dayOfWeek = d.getDay();
-  return dayOfWeek >= 1 && dayOfWeek <= 5; // Monday - Friday
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  return days[d.getDay()] || "";
 }
 
-function isTimeInWeekdayBlockedWindow(timeStr: string): boolean {
-  if (!timeStr || timeStr === "12:00") return false; // 12:00 is placeholder for Other/Custom option
+function timeStringToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
   const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
-  if (isNaN(h)) return false;
-  const mins = h * 60 + (isNaN(m) ? 0 : m);
-  return mins >= 480 && mins <= 930; // 8:00 AM (480 mins) to 3:30 PM (930 mins) inclusive
+  if (isNaN(h)) return 0;
+  return h * 60 + (isNaN(m) ? 0 : m);
+}
+
+function isSlotBlockedByWeeklySchedule(dateStr: string, timeStr: string, scheduleConfig: any): { blocked: boolean; reason?: string } {
+  if (!dateStr || !timeStr || timeStr === "12:00") return { blocked: false };
+  const dayName = getDayOfWeekName(dateStr);
+  if (!dayName || !scheduleConfig || !scheduleConfig[dayName]) return { blocked: false };
+
+  const dayRule = scheduleConfig[dayName];
+  if (dayRule.status === "blocked_all_day") {
+    return { blocked: true, reason: dayRule.note || `${dayName.toUpperCase()} is marked as unavailable by the owner.` };
+  }
+
+  if (dayRule.status === "blocked_hours" && dayRule.blockedStart && dayRule.blockedEnd) {
+    const slotMins = timeStringToMinutes(timeStr);
+    const startMins = timeStringToMinutes(dayRule.blockedStart);
+    const endMins = timeStringToMinutes(dayRule.blockedEnd);
+    if (slotMins >= startMins && slotMins <= endMins) {
+      return { 
+        blocked: true, 
+        reason: dayRule.note || `Hours between ${dayRule.blockedStart} and ${dayRule.blockedEnd} on ${dayName.toUpperCase()}s are blocked by the owner.`
+      };
+    }
+  }
+
+  return { blocked: false };
 }
 
 // Bookings: Public Busy-slots (Only returns safe time & status indicators for busy slots)
@@ -785,7 +831,8 @@ app.get("/api/busy-slots", async (req, res) => {
                 id: `${docSnap.id}_${slot}`,
                 dateTime: `${data.date}T${slot}:00`,
                 status: "confirmed",
-                isBlocked: true
+                isBlocked: true,
+                reason: data.reason
               });
             });
           } else {
@@ -793,7 +840,8 @@ app.get("/api/busy-slots", async (req, res) => {
               id: docSnap.id,
               dateTime: `${data.date}T${data.timeSlot}:00`,
               status: "confirmed",
-              isBlocked: true
+              isBlocked: true,
+              reason: data.reason
             });
           }
         }
@@ -802,7 +850,9 @@ app.get("/api/busy-slots", async (req, res) => {
       console.warn("[Server DB Proxy] Failed to fetch blocked slots for busy slots calculation:", blockedErr);
     }
 
-    return res.json(slots);
+    const weeklySchedule = await getWeeklyScheduleConfig();
+
+    return res.json({ slots, weeklySchedule });
   } catch (err: any) {
     console.error("[Server DB Proxy] Get busy slots Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to retrieve busy slots." });
@@ -821,10 +871,12 @@ app.post("/api/bookings", async (req, res) => {
       const [bDate, bTime] = data.dateTime.split("T");
       const bHourMin = bTime ? bTime.substring(0, 5) : "";
       
-      // Enforce Weekday 8:00 AM - 3:30 PM rule
-      if (isWeekdayDateString(bDate) && isTimeInWeekdayBlockedWindow(bHourMin)) {
+      // Dynamic Weekly Schedule Check
+      const scheduleConfig = await getWeeklyScheduleConfig();
+      const weeklyCheck = isSlotBlockedByWeeklySchedule(bDate, bHourMin, scheduleConfig);
+      if (weeklyCheck.blocked) {
         return res.status(400).json({ 
-          error: "All weekday time slots between 8:00 AM and 3:30 PM are blocked by the owner. Please select an available slot (e.g. Evening 6:00 PM or weekend dates)." 
+          error: weeklyCheck.reason || "The selected time falls outside of the owner's operating hours." 
         });
       }
 
@@ -906,6 +958,36 @@ app.get("/api/blocked-slots", async (req, res) => {
   } catch (err: any) {
     console.error("[Server DB Proxy] Get Blocked Slots Firestore failed:", err);
     return res.status(500).json({ error: err.message || "Failed to retrieve blocked slots." });
+  }
+});
+
+// 9.5 Weekly Schedule: Read & Save
+app.get("/api/weekly-schedule", async (req, res) => {
+  try {
+    const config = await getWeeklyScheduleConfig();
+    return res.json(config);
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Get Weekly Schedule failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to retrieve weekly schedule." });
+  }
+});
+
+app.post("/api/weekly-schedule", async (req, res) => {
+  if (!(await verifyOwnerEmailHeader(req))) {
+    return res.status(403).json({ error: "Unauthorized access: Owner only." });
+  }
+
+  const newSchedule = req.body;
+  if (!newSchedule || typeof newSchedule !== "object") {
+    return res.status(400).json({ error: "Invalid schedule payload." });
+  }
+
+  try {
+    await firestoreDb.collection("settings").doc("weekly_schedule").set(newSchedule, { merge: true });
+    return res.json({ success: true, schedule: newSchedule });
+  } catch (err: any) {
+    console.error("[Server DB Proxy] Save Weekly Schedule failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to update weekly schedule." });
   }
 });
 

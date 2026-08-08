@@ -559,7 +559,7 @@ export default function App() {
 
               <div className="pt-4 border-t border-[#e6dccf]/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
                 <p className="text-zinc-500 font-serif italic text-center sm:text-left">
-                  "No matter where you live in the North Cobb area, if you have a spigot and an outlet, you quality for premium driveway care."
+                  "No matter where you live in the North Cobb area, if you have a spigot and an outlet, you qualify for premium driveway care."
                 </p>
                 <div className="flex items-center gap-3 font-sans font-bold uppercase text-[10px] tracking-widest">
                   <span className="text-emerald-700 bg-emerald-50 border border-emerald-250/20 px-2 py-1 rounded">● No Travel Surcharges</span>
